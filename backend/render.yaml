@@ -8,8 +8,8 @@ services:
   - type: web
     name: todo-backend
     env: docker
-    repo: https://github.com/owner/repo.git
-    branch: main
+    repo: https://github.com/Awais68/hackathon-2-phase-ii-full-stack-web-app.git
+    branch: 011-phase2-deploy
     dockerfilePath: backend/Dockerfile
     dockerCommand: null
     healthCheckPath: /health
@@ -31,6 +31,8 @@ services:
         value: https://*.vercel.app,http://localhost:3000
       - key: LOG_LEVEL
         value: INFO
+      - key: ENVIRONMENT
+        value: production
 
 databases:
   - name: todo-db
