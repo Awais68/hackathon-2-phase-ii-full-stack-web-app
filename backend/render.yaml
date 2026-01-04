@@ -8,7 +8,7 @@ services:
   - type: web
     name: todo-backend
     env: docker
-    repo: https://github.com/Awais68/hackathon-2-phase-ii-full-stack-web-app.git
+    repo: https://github.com/Awais68/hackathon-2-phase-ii-full-stack-web-app
     branch: 011-phase2-deploy
     dockerfilePath: backend/Dockerfile
     dockerCommand: null

@@ -13,10 +13,15 @@ def configure_cors(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance
     """
+    # Allow all origins in development, restrict in production
+    origins = settings.CORS_ORIGINS if settings.CORS_ORIGINS else ["*"]
+    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
+        allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],
+        expose_headers=["*"],
+        max_age=600,  # Cache preflight requests for 10 minutes
     )
