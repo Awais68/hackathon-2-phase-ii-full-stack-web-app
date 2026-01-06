@@ -1,7 +1,7 @@
 """
 Authentication middleware for JWT token verification.
 """
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
 from sqlmodel import Session
@@ -10,10 +10,11 @@ from src.db.session import get_session
 from src.services.user_service import UserService
 from src.models.user import User
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     session: Session = Depends(get_session)
 ) -> User:
@@ -21,6 +22,7 @@ def get_current_user(
     Dependency to get current authenticated user from JWT token.
 
     Args:
+        request: FastAPI request object
         credentials: HTTP Bearer credentials containing JWT token
         session: Database session
 
@@ -30,6 +32,17 @@ def get_current_user(
     Raises:
         HTTPException: If token is invalid or user not found
     """
+    # Skip authentication for OPTIONS requests (CORS preflight)
+    if request.method == "OPTIONS":
+        return None
+    
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token = credentials.credentials
     payload = decode_access_token(token)
 

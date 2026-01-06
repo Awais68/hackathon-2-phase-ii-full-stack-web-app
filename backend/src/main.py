@@ -1,7 +1,7 @@
 """
 Main FastAPI application entry point.
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import SQLModel
@@ -22,7 +22,7 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
-# Configure CORS
+# Configure CORS FIRST before any routes
 configure_cors(app)
 
 # Register exception handlers

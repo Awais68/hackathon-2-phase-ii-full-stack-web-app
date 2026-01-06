@@ -7,8 +7,8 @@ from passlib.context import CryptContext
 import jwt
 from src.core.config import settings
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing context - use argon2 for Python 3.13 compatibility
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -27,7 +27,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """
-    Hash a password using bcrypt.
+    Hash a password using argon2.
 
     Args:
         password: Plain text password to hash
@@ -35,6 +35,8 @@ def get_password_hash(password: str) -> str:
     Returns:
         str: Hashed password
     """
+    return pwd_context.hash(password)
+    password = password[:72]
     return pwd_context.hash(password)
 
 
