@@ -617,11 +617,11 @@ export default function Dashboard() {
                 const mappedTasks: Mission[] = tasks.map(task => ({
                     id: task.id.toString(),
                     title: task.title,
-                    description: task.description,
+                    description: task.description || '',
                     priority: 'medium' as const, // Default since backend doesn't have this
                     status: task.completed ? 'completed' as const : 'pending' as const,
                     dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                    createdAt: task.created_at,
+                    createdAt: task.createdAt,
                     tags: [],
                     category: 'General',
                 }));
@@ -724,7 +724,7 @@ export default function Dashboard() {
             const newMission: Mission = {
                 ...missionData,
                 id: task.id.toString(),
-                createdAt: task.created_at,
+                createdAt: task.createdAt,
             };
             setMissions(prev => [newMission, ...prev]);
             setShowAddModal(false);
