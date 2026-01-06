@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import {
     Plus,
     Search,
@@ -29,6 +30,8 @@ import {
 } from 'lucide-react';
 import VoiceCommandButton from './VoiceCommandButton';
 import ParticlesBackground from './ParticlesBackground';
+import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 // Types
 interface Mission {
@@ -225,11 +228,13 @@ const MissionCard = ({
     mission,
     onEdit,
     onDelete,
+    onToggleComplete,
     isDark
 }: {
     mission: Mission;
     onEdit: (m: Mission) => void;
     onDelete: (id: string) => void;
+    onToggleComplete: (id: string) => void;
     isDark: boolean;
 }) => {
     const [showMenu, setShowMenu] = useState(false);
@@ -292,6 +297,15 @@ const MissionCard = ({
                                 ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`}
                         >
                             <Edit className="w-4 h-4" /> Edit
+                        </button>
+                        <button
+                            onClick={() => { onToggleComplete(mission.id); setShowMenu(false); }}
+                            className={`flex items-center gap-2 px-4 py-2 text-sm w-full
+                                ${mission.status === 'completed'
+                                    ? isDark ? 'text-orange-400 hover:bg-gray-700' : 'text-orange-600 hover:bg-gray-100'
+                                    : isDark ? 'text-green-400 hover:bg-gray-700' : 'text-green-600 hover:bg-gray-100'}`}
+                        >
+                            <CheckCircle className="w-4 h-4" /> {mission.status === 'completed' ? 'Mark Incomplete' : 'Mark Complete'}
                         </button>
                         <button
                             onClick={() => { onDelete(mission.id); setShowMenu(false); }}
@@ -554,14 +568,16 @@ const AddMissionModal = ({
 
 // Main Dashboard Component
 export default function Dashboard() {
-    const [missions, setMissions] = useState<Mission[]>(mockMissions);
+    const router = useRouter();
+    const { isAuthenticated, tokens } = useAuthStore();
+    const [missions, setMissions] = useState<Mission[]>([]);
+    const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedPriority, setSelectedPriority] = useState<string>('all');
     const [selectedStatus, setSelectedStatus] = useState<string>('all');
     const [showFilters, setShowFilters] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
-    const [sidebarOpen, setSidebarOpen] = useState(true);
     const [isMobile, setIsMobile] = useState(false);
     const [isDark, setIsDark] = useState(() => {
         // Initialize from localStorage or default to true
@@ -572,12 +588,58 @@ export default function Dashboard() {
         return true;
     });
 
+    // Fetch tasks from API on mount
+    useEffect(() => {
+        const fetchTasks = async () => {
+            try {
+                setLoading(true);
+
+                // Check authentication
+                if (!isAuthenticated || !tokens) {
+                    console.log('Not authenticated - showing empty dashboard');
+                    setLoading(false);
+                    // Don't redirect immediately, let user see the dashboard
+                    // They'll be redirected when they try to create a task
+                    return;
+                }
+
+                console.log('Fetching tasks with token:', tokens.accessToken?.substring(0, 20) + '...');
+                const tasks = await api.tasks.list();
+                console.log('Tasks fetched successfully:', tasks.length);
+
+                // Map backend tasks to Mission format
+                const mappedTasks: Mission[] = tasks.map(task => ({
+                    id: task.id.toString(),
+                    title: task.title,
+                    description: task.description,
+                    priority: 'medium' as const, // Default since backend doesn't have this
+                    status: task.completed ? 'completed' as const : 'pending' as const,
+                    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                    createdAt: task.created_at,
+                    tags: [],
+                    category: 'General',
+                }));
+                setMissions(mappedTasks);
+            } catch (error) {
+                console.error('Failed to fetch tasks:', error);
+                // If not authenticated, show empty dashboard
+                if (error instanceof Error && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+                    console.log('Authentication error - clearing missions');
+                    setMissions([]);
+                }
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchTasks();
+    }, [router, isAuthenticated, tokens]);
+
     // Check for mobile on mount and resize
     useEffect(() => {
         const checkMobile = () => {
             const mobile = window.innerWidth < 768;
             setIsMobile(mobile);
-            if (mobile) setSidebarOpen(false);
         };
 
         checkMobile();
@@ -640,25 +702,87 @@ export default function Dashboard() {
     });
 
     // Add new mission
-    const handleAddMission = useCallback((missionData: Omit<Mission, 'id' | 'createdAt'>) => {
-        const newMission: Mission = {
-            ...missionData,
-            id: Date.now().toString(),
-            createdAt: new Date().toISOString(),
-        };
-        setMissions(prev => [newMission, ...prev]);
-        setShowAddModal(false);
-    }, []);
+    const handleAddMission = useCallback(async (missionData: Omit<Mission, 'id' | 'createdAt'>) => {
+        try {
+            console.log('Creating task with data:', missionData);
+
+            // Create task in backend
+            const task = await api.tasks.create({
+                title: missionData.title,
+                description: missionData.description,
+            });
+
+            console.log('Task created successfully:', task);
+
+            // Add to local state
+            const newMission: Mission = {
+                ...missionData,
+                id: task.id.toString(),
+                createdAt: task.created_at,
+            };
+            setMissions(prev => [newMission, ...prev]);
+            setShowAddModal(false);
+        } catch (error) {
+            console.error('Failed to create task - Full error:', error);
+
+            // Show more specific error message
+            let errorMessage = 'Failed to create task. ';
+
+            if (error instanceof Error) {
+                if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                    errorMessage += 'Please login first.';
+                    // Redirect to login after a short delay
+                    setTimeout(() => router.push('/auth'), 2000);
+                } else if (error.message.includes('403')) {
+                    errorMessage += 'You do not have permission.';
+                } else if (error.message.includes('Network')) {
+                    errorMessage += 'Network error. Check if backend is running.';
+                } else {
+                    errorMessage += error.message;
+                }
+            } else {
+                errorMessage += 'Please try again.';
+            }
+
+            alert(errorMessage);
+        }
+    }, [router]);
 
     // Delete mission
-    const handleDeleteMission = useCallback((id: string) => {
-        setMissions(prev => prev.filter(m => m.id !== id));
+    const handleDeleteMission = useCallback(async (id: string) => {
+        try {
+            await api.tasks.delete(id);
+            setMissions(prev => prev.filter(m => m.id !== id));
+        } catch (error) {
+            console.error('Failed to delete task:', error);
+            alert('Failed to delete task. Please try again.');
+        }
     }, []);
 
     // Edit mission
     const handleEditMission = useCallback((mission: Mission) => {
         console.log('Edit mission:', mission);
     }, []);
+
+    // Toggle mission completion
+    const handleToggleComplete = useCallback(async (id: string) => {
+        try {
+            const mission = missions.find(m => m.id === id);
+            if (!mission) return;
+
+            const completed = mission.status !== 'completed';
+            await api.tasks.update(id, { completed });
+
+            setMissions(prev => prev.map(m =>
+                m.id === id
+                    ? { ...m, status: completed ? 'completed' : 'pending' }
+                    : m
+            ));
+        } catch (error) {
+            console.error('Failed to update task:', error);
+            alert('Failed to update task. Please try again.');
+        }
+    }, [missions]);
 
     // Voice command handler - FIXED to properly add tasks
     const handleVoiceCommand = useCallback((command: string): boolean => {
@@ -711,9 +835,6 @@ export default function Dashboard() {
 
         return false;
     }, [handleAddMission]);
-
-    // State for charts modal
-    const [showChartsModal, setShowChartsModal] = useState(false);
 
     // Pre-defined particle data (static to avoid impure function calls during render)
     const particleData = [
@@ -803,91 +924,62 @@ export default function Dashboard() {
             {isDark && <ParticlesBackground />}
 
             <div className="relative z-10 flex">
-                {/* Mobile Sidebar Overlay */}
-                <AnimatePresence>
-                    {isMobile && sidebarOpen && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="fixed inset-0 bg-black/60 z-40"
-                            onClick={() => setSidebarOpen(false)}
-                        />
-                    )}
-                </AnimatePresence>
+                {/* Sidebar - Always Visible */}
+                <aside
+                    className={`relative w-72 backdrop-blur-xl border-r flex flex-col h-screen
+                        ${isDark ? 'bg-gray-900/80 border-cyan-500/30' : 'bg-white/80 border-sky-200'}`}
+                >
+                    {/* Sidebar Header */}
+                    <div className={`p-6 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <h1 className={`text-xl font-bold ${isDark ? 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500' : 'text-cyan-600'}`}>
+                            <Target className="inline w-5 h-5 mr-2" />
+                            Mission Control
+                        </h1>
+                    </div>
 
-                {/* Sidebar */}
-                <AnimatePresence>
-                    {sidebarOpen && (
-                        <motion.aside
-                            initial={{ x: -280 }}
-                            animate={{ x: 0 }}
-                            exit={{ x: -280 }}
-                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                            className={`${isMobile ? 'fixed z-50' : 'relative'} w-72 backdrop-blur-xl border-r flex flex-col h-screen
-                                ${isDark ? 'bg-gray-900/80 border-cyan-500/30' : 'bg-white/80 border-sky-200'}`}
-                        >
-                            {/* Sidebar Header */}
-                            <div className={`p-6 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                                <div className="flex items-center justify-between">
-                                    <h1 className={`text-xl font-bold ${isDark ? 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500' : 'text-cyan-600'}`}>
-                                        <Target className="inline w-5 h-5 mr-2" />
-                                        Mission Control
-                                    </h1>
-                                    <button
-                                        onClick={() => setSidebarOpen(false)}
-                                        className={`p-2 transition-colors ${isDark ? 'text-gray-400 hover:text-cyan-400' : 'text-gray-500 hover:text-cyan-600'}`}
-                                    >
-                                        <ChevronLeft className="w-5 h-5" />
-                                    </button>
+                    {/* Mission Tabs */}
+                    <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+                        {missionTabs.map((tab) => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${activeTab === tab.id
+                                    ? isDark
+                                        ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                                        : 'bg-cyan-100 text-cyan-700 border border-cyan-300'
+                                    : isDark
+                                        ? 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                    }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    {tab.icon}
+                                    <span className="font-medium">{tab.label}</span>
                                 </div>
-                            </div>
+                                <span className={`px-2 py-0.5 text-xs rounded-full ${activeTab === tab.id
+                                    ? isDark ? 'bg-cyan-500/30' : 'bg-cyan-200'
+                                    : isDark ? 'bg-gray-700' : 'bg-gray-200'
+                                    }`}>
+                                    {tab.count}
+                                </span>
+                            </button>
+                        ))}
+                    </nav>
 
-                            {/* Mission Tabs */}
-                            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-                                {missionTabs.map((tab) => (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => setActiveTab(tab.id)}
-                                        className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${activeTab === tab.id
-                                            ? isDark
-                                                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
-                                                : 'bg-cyan-100 text-cyan-700 border border-cyan-300'
-                                            : isDark
-                                                ? 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                                                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            {tab.icon}
-                                            <span className="font-medium">{tab.label}</span>
-                                        </div>
-                                        <span className={`px-2 py-0.5 text-xs rounded-full ${activeTab === tab.id
-                                            ? isDark ? 'bg-cyan-500/30' : 'bg-cyan-200'
-                                            : isDark ? 'bg-gray-700' : 'bg-gray-200'
-                                            }`}>
-                                            {tab.count}
-                                        </span>
-                                    </button>
-                                ))}
-                            </nav>
-
-                            {/* Stats */}
-                            <div className={`p-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className={`rounded-lg p-3 text-center ${isDark ? 'bg-gray-800/50' : 'bg-gray-100'}`}>
-                                        <p className={`text-2xl font-bold ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>{missions.length}</p>
-                                        <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total</p>
-                                    </div>
-                                    <div className={`rounded-lg p-3 text-center ${isDark ? 'bg-gray-800/50' : 'bg-gray-100'}`}>
-                                        <p className={`text-2xl font-bold ${isDark ? 'text-green-400' : 'text-green-600'}`}>{stats.completed}</p>
-                                        <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Done</p>
-                                    </div>
-                                </div>
+                    {/* Stats */}
+                    <div className={`p-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className={`rounded-lg p-3 text-center ${isDark ? 'bg-gray-800/50' : 'bg-gray-100'}`}>
+                                <p className={`text-2xl font-bold ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>{missions.length}</p>
+                                <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total</p>
                             </div>
-                        </motion.aside>
-                    )}
-                </AnimatePresence>
+                            <div className={`rounded-lg p-3 text-center ${isDark ? 'bg-gray-800/50' : 'bg-gray-100'}`}>
+                                <p className={`text-2xl font-bold ${isDark ? 'text-green-400' : 'text-green-600'}`}>{stats.completed}</p>
+                                <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Done</p>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
 
                 {/* Main Content */}
                 <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
@@ -895,14 +987,6 @@ export default function Dashboard() {
                     <header className={`backdrop-blur-xl border-b px-4 md:px-6 py-4
                         ${isDark ? 'bg-gray-900/60 border-gray-700' : 'bg-white/60 border-gray-200'}`}>
                         <div className="flex items-center justify-between gap-4">
-                            {/* Menu Toggle */}
-                            <button
-                                onClick={() => setSidebarOpen(!sidebarOpen)}
-                                className={`p-2 transition-colors ${isDark ? 'text-gray-400 hover:text-cyan-400' : 'text-gray-500 hover:text-cyan-600'}`}
-                            >
-                                <Menu className="w-6 h-6" />
-                            </button>
-
                             {/* Search Bar */}
                             <div className="flex-1 max-w-xl relative">
                                 <Search className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
@@ -928,17 +1012,6 @@ export default function Dashboard() {
                                     className={`p-3 rounded-lg transition-all ${isDark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                                 >
                                     {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                                </motion.button>
-
-                                {/* Charts Button */}
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={() => setShowChartsModal(true)}
-                                    className={`p-3 rounded-lg transition-all ${isDark ? 'bg-gray-800 text-purple-400 hover:bg-gray-700' : 'bg-gray-100 text-purple-500 hover:bg-gray-200'}`}
-                                    title="View Analytics"
-                                >
-                                    <BarChart3 className="w-5 h-5" />
                                 </motion.button>
 
                                 {/* Filter Toggle */}
@@ -1027,6 +1100,52 @@ export default function Dashboard() {
 
                     {/* Dashboard Content */}
                     <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                        {/* Authentication Warning Banner */}
+                        {!isAuthenticated && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className={`mb-6 p-6 rounded-2xl border-2 shadow-xl ${isDark ? 'bg-gradient-to-r from-orange-500/20 to-red-500/20 border-orange-500/50 text-orange-300' : 'bg-gradient-to-r from-orange-50 to-red-50 border-orange-300 text-orange-800'}`}
+                            >
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-start gap-3 flex-1">
+                                        <AlertTriangle className="w-6 h-6 flex-shrink-0 mt-1" />
+                                        <div>
+                                            <h3 className="font-bold text-lg mb-1">Authentication Required</h3>
+                                            <p className="text-sm opacity-90 mb-3">
+                                                You need to login or create an account to save and sync your tasks across devices.
+                                            </p>
+                                            <div className="flex gap-3">
+                                                <button
+                                                    onClick={() => router.push('/auth?mode=signin')}
+                                                    className={`px-6 py-2 rounded-lg font-semibold transition-all shadow-lg ${isDark ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-orange-600 hover:bg-orange-700 text-white'}`}
+                                                >
+                                                    Login
+                                                </button>
+                                                <button
+                                                    onClick={() => router.push('/auth?mode=signup')}
+                                                    className={`px-6 py-2 rounded-lg font-semibold border-2 transition-all ${isDark ? 'border-orange-500 text-orange-400 hover:bg-orange-500/20' : 'border-orange-600 text-orange-700 hover:bg-orange-100'}`}
+                                                >
+                                                    Sign Up
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            // User can dismiss the banner temporarily
+                                            const banner = document.querySelector('[data-auth-banner]');
+                                            if (banner) banner.remove();
+                                        }}
+                                        className={`p-1 rounded-lg transition-colors ${isDark ? 'hover:bg-orange-500/20' : 'hover:bg-orange-200'}`}
+                                        title="Dismiss"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </motion.div>
+                        )}
+
                         {/* Status Cards */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                             <StatusCard
@@ -1063,43 +1182,13 @@ export default function Dashboard() {
                             />
                         </div>
 
-                        {/* Charts Section */}
-                        <div className={`grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 p-4 rounded-2xl backdrop-blur-xl border
-                            ${isDark ? 'bg-gray-900/40 border-gray-700/50' : 'bg-white/60 border-gray-200'}`}>
-                            <div className="p-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className={`font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                                        <BarChart3 className="inline w-4 h-4 mr-2" />
-                                        Completed
-                                    </h3>
-                                    <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Last 7 days</span>
-                                </div>
-                                <MiniChart data={chartData.completed} color="green" isDark={isDark} />
-                            </div>
-                            <div className="p-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className={`font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                                        <Zap className="inline w-4 h-4 mr-2" />
-                                        Active
-                                    </h3>
-                                    <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Last 7 days</span>
-                                </div>
-                                <MiniChart data={chartData.active} color="orange" isDark={isDark} />
-                            </div>
-                            <div className="p-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className={`font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                                        <Clock className="inline w-4 h-4 mr-2" />
-                                        Pending
-                                    </h3>
-                                    <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Last 7 days</span>
-                                </div>
-                                <MiniChart data={chartData.pending} color="purple" isDark={isDark} />
-                            </div>
-                        </div>
-
                         {/* Mission Grid */}
-                        {filteredMissions.length === 0 ? (
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center h-64 text-center">
+                                <RefreshCw className={`w-16 h-16 mb-4 animate-spin ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                                <h3 className={`text-xl font-semibold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Loading missions...</h3>
+                            </div>
+                        ) : filteredMissions.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-64 text-center">
                                 <Target className={`w-16 h-16 mb-4 ${isDark ? 'text-gray-600' : 'text-gray-400'}`} />
                                 <h3 className={`text-xl font-semibold mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>No Missions Found</h3>
@@ -1128,6 +1217,7 @@ export default function Dashboard() {
                                             mission={mission}
                                             onEdit={handleEditMission}
                                             onDelete={handleDeleteMission}
+                                            onToggleComplete={handleToggleComplete}
                                             isDark={isDark}
                                         />
                                     ))}
@@ -1150,134 +1240,6 @@ export default function Dashboard() {
                 )}
             </AnimatePresence>
 
-            {/* Charts Analytics Modal */}
-            <AnimatePresence>
-                {showChartsModal && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-                        onClick={() => setShowChartsModal(false)}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                            onClick={(e) => e.stopPropagation()}
-                            className={`relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border shadow-2xl
-                                ${isDark ? 'bg-gray-900 border-purple-500/30' : 'bg-white border-purple-200'}`}
-                        >
-                            {/* Header */}
-                            <div className={`sticky top-0 flex items-center justify-between p-6 border-b backdrop-blur-xl z-10
-                                ${isDark ? 'bg-gray-900/90 border-gray-700' : 'bg-white/90 border-gray-200'}`}>
-                                <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-lg ${isDark ? 'bg-purple-500/20' : 'bg-purple-100'}`}>
-                                        <BarChart3 className={`w-6 h-6 ${isDark ? 'text-purple-400' : 'text-purple-600'}`} />
-                                    </div>
-                                    <div>
-                                        <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>Analytics Dashboard</h2>
-                                        <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Mission Performance Overview</p>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setShowChartsModal(false)}
-                                    className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            {/* Charts Content */}
-                            <div className="p-6 space-y-6">
-                                {/* Summary Cards */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className={`p-4 rounded-xl text-center ${isDark ? 'bg-cyan-500/10 border border-cyan-500/30' : 'bg-cyan-50 border border-cyan-200'}`}>
-                                        <p className={`text-3xl font-bold ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>{stats.total}</p>
-                                        <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Total</p>
-                                    </div>
-                                    <div className={`p-4 rounded-xl text-center ${isDark ? 'bg-orange-500/10 border border-orange-500/30' : 'bg-orange-50 border border-orange-200'}`}>
-                                        <p className={`text-3xl font-bold ${isDark ? 'text-orange-400' : 'text-orange-600'}`}>{stats.active}</p>
-                                        <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Active</p>
-                                    </div>
-                                    <div className={`p-4 rounded-xl text-center ${isDark ? 'bg-green-500/10 border border-green-500/30' : 'bg-green-50 border border-green-200'}`}>
-                                        <p className={`text-3xl font-bold ${isDark ? 'text-green-400' : 'text-green-600'}`}>{stats.completed}</p>
-                                        <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Completed</p>
-                                    </div>
-                                    <div className={`p-4 rounded-xl text-center ${isDark ? 'bg-purple-500/10 border border-purple-500/30' : 'bg-purple-50 border border-purple-200'}`}>
-                                        <p className={`text-3xl font-bold ${isDark ? 'text-purple-400' : 'text-purple-600'}`}>{stats.pending}</p>
-                                        <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Pending</p>
-                                    </div>
-                                </div>
-
-                                {/* Chart Sections */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className={`p-6 rounded-xl ${isDark ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
-                                        <h3 className={`font-semibold mb-4 flex items-center gap-2 ${isDark ? 'text-green-400' : 'text-green-600'}`}>
-                                            <CheckCircle className="w-5 h-5" /> Completed Tasks
-                                        </h3>
-                                        <div className="h-32">
-                                            <MiniChart data={chartData.completed} color="green" isDark={isDark} />
-                                        </div>
-                                        <p className={`text-xs mt-4 text-center ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Last 7 days</p>
-                                    </div>
-                                    <div className={`p-6 rounded-xl ${isDark ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
-                                        <h3 className={`font-semibold mb-4 flex items-center gap-2 ${isDark ? 'text-orange-400' : 'text-orange-600'}`}>
-                                            <Activity className="w-5 h-5" /> Active Tasks
-                                        </h3>
-                                        <div className="h-32">
-                                            <MiniChart data={chartData.active} color="orange" isDark={isDark} />
-                                        </div>
-                                        <p className={`text-xs mt-4 text-center ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Last 7 days</p>
-                                    </div>
-                                    <div className={`p-6 rounded-xl ${isDark ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
-                                        <h3 className={`font-semibold mb-4 flex items-center gap-2 ${isDark ? 'text-purple-400' : 'text-purple-600'}`}>
-                                            <Clock className="w-5 h-5" /> Pending Tasks
-                                        </h3>
-                                        <div className="h-32">
-                                            <MiniChart data={chartData.pending} color="purple" isDark={isDark} />
-                                        </div>
-                                        <p className={`text-xs mt-4 text-center ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Last 7 days</p>
-                                    </div>
-                                </div>
-
-                                {/* Priority Distribution */}
-                                <div className={`p-6 rounded-xl ${isDark ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
-                                    <h3 className={`font-semibold mb-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Priority Distribution</h3>
-                                    <div className="flex items-center gap-4">
-                                        {['critical', 'high', 'medium', 'low'].map((priority) => {
-                                            const count = missions.filter(m => m.priority === priority).length;
-                                            const percentage = missions.length > 0 ? (count / missions.length) * 100 : 0;
-                                            const colors: Record<string, string> = {
-                                                critical: isDark ? 'bg-red-500' : 'bg-red-400',
-                                                high: isDark ? 'bg-orange-500' : 'bg-orange-400',
-                                                medium: isDark ? 'bg-yellow-500' : 'bg-yellow-400',
-                                                low: isDark ? 'bg-blue-500' : 'bg-blue-400',
-                                            };
-                                            return (
-                                                <div key={priority} className="flex-1">
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <span className={`text-xs capitalize ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{priority}</span>
-                                                        <span className={`text-xs font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{count}</span>
-                                                    </div>
-                                                    <div className={`h-2 rounded-full overflow-hidden ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                                                        <motion.div
-                                                            initial={{ width: 0 }}
-                                                            animate={{ width: `${percentage}%` }}
-                                                            transition={{ duration: 0.8, delay: 0.2 }}
-                                                            className={`h-full rounded-full ${colors[priority]}`}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
         </div>
     );
 }

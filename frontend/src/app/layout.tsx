@@ -26,6 +26,16 @@ const notoSans = Noto_Sans({
 })
 
 /**
+ * Viewport configuration
+ */
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+}
+
+/**
  * Metadata for the application
  */
 export const metadata: Metadata = {
@@ -41,14 +51,11 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'Mission Manager',
   },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
   formatDetection: {
     telephone: false,
-  },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 5,
-    userScalable: true,
   },
 }
 

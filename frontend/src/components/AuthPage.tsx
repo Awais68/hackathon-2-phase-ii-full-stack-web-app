@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Terminal, ArrowRight, User, Lock, Eye, EyeOff, Mail, AlertCircle, CheckCircle2 } from 'lucide-react'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/stores/useAuthStore'
+import { signIn, signUp } from '@/lib/auth-client'
 
 type AuthMode = 'signin' | 'signup'
 
@@ -22,7 +21,6 @@ export function AuthPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [secrets, setSecrets] = useState('')
 
   // Check for mode in URL
   useEffect(() => {
@@ -34,8 +32,8 @@ export function AuthPage() {
 
   // Password strength
   const getPasswordStrength = () => {
-    if (!secrets) return { level: '', color: '', width: '0%' }
-    const strength = secrets.length
+    if (!password) return { level: '', color: '', width: '0%' }
+    const strength = password.length
     if (strength < 8) return { level: 'Weak', color: 'bg-destructive', width: '33%' }
     if (strength < 12) return { level: 'Medium', color: 'bg-warning', width: '66%' }
     return { level: 'Strong', color: 'bg-success', width: '100%' }
@@ -60,39 +58,60 @@ export function AuthPage() {
           setIsLoading(false)
           return
         }
-        if (secrets !== confirmPassword) {
-          setError('Secret keys do not match')
+        if (password !== confirmPassword) {
+          setError('Passwords do not match')
           setIsLoading(false)
           return
         }
-        if (secrets.length < 8) {
-          setError('Secret key must be at least 8 characters')
+        if (password.length < 8) {
+          setError('Password must be at least 8 characters')
           setIsLoading(false)
           return
         }
 
-        // Register user via API (email, username, password)
-        const { user, tokens } = await api.auth.register(email, username, secrets)
-        useAuthStore.getState().login(user, tokens)
-        router.push('/dashboard')
-      } else {
-        if (!username.trim()) {
-          setError('Operative ID is required')
+        // Sign up with better-auth
+        const result = await signUp.email({
+          email,
+          password,
+          name: username,
+        })
+
+        if (result.error) {
+          setError(result.error.message || 'Signup failed')
           setIsLoading(false)
           return
         }
-        // Login user via API (username, password)
-        const { user, tokens } = await api.auth.login(username, password)
-        useAuthStore.getState().login(user, tokens)
+
+        router.push('/dashboard')
+      } else {
+        if (!email.trim()) {
+          setError('Email is required')
+          setIsLoading(false)
+          return
+        }
+        if (!password.trim()) {
+          setError('Password is required')
+          setIsLoading(false)
+          return
+        }
+
+        // Sign in with better-auth
+        const result = await signIn.email({
+          email,
+          password,
+        })
+
+        if (result.error) {
+          setError(result.error.message || 'Login failed')
+          setIsLoading(false)
+          return
+        }
+
         router.push('/dashboard')
       }
     } catch (err: unknown) {
-      const apiError = err as { message?: string; code?: string; detail?: string }
-      if (apiError.code === 'NETWORK_ERROR') {
-        setError('Connection failed. Ensure backend is running on port 8000.')
-      } else {
-        setError(apiError.message || apiError.detail || 'Authentication failed. Please try again.')
-      }
+      const error = err as { message?: string }
+      setError(error.message || 'Authentication failed. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -103,7 +122,6 @@ export function AuthPage() {
     setError('')
     setPassword('')
     setConfirmPassword('')
-    setSecrets('')
   }
 
   return (
@@ -182,118 +200,90 @@ export function AuthPage() {
                 </motion.div>
               )}
 
-              {/* Username / Operative ID */}
+              {/* Email Field */}
               <div>
                 <label className="block font-mono text-xs text-muted-foreground mb-2">
-                  Operative ID
+                  {mode === 'signup' ? 'Secure Channel (Email)' : 'Email Address'}
                 </label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Enter your operative ID"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="operative@example.com"
                     className="input-terminal w-full pl-10"
                     required
                   />
                 </div>
               </div>
 
-              {/* Email - Only for signup */}
+              {/* Username - Only for signup */}
               {mode === 'signup' && (
                 <div>
                   <label className="block font-mono text-xs text-muted-foreground mb-2">
-                    Secure Channel
+                    Operative ID (Username)
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="operative@example.com"
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="Enter your operative ID"
                       className="input-terminal w-full pl-10"
-                      required
                     />
                   </div>
                 </div>
               )}
 
-              {/* Sign In: Password / Sign Up: Secrets */}
-              {mode === 'signin' ? (
-                <div>
-                  <label className="block font-mono text-xs text-muted-foreground mb-2">
-                    Access Key
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter your access key"
-                      className="input-terminal w-full pl-10 pr-10"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
+              {/* Password Field */}
+              <div>
+                <label className="block font-mono text-xs text-muted-foreground mb-2">
+                  {mode === 'signin' ? 'Access Key (Password)' : 'Create Password'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={mode === 'signin' ? 'Enter your password' : 'Create password (min 8 chars)'}
+                    className="input-terminal w-full pl-10 pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
-              ) : (
-                <div>
-                  <label className="block font-mono text-xs text-muted-foreground mb-2">
-                    Add Secrets
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={secrets}
-                      onChange={(e) => {
-                        setSecrets(e.target.value)
-                        setPassword(e.target.value)
-                      }}
-                      placeholder="Create your secret key (min 8 chars)"
-                      className="input-terminal w-full pl-10 pr-10"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  {secrets && (
-                    <div className="mt-2">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="h-1 flex-1 bg-secondary rounded-full overflow-hidden">
-                          <div
-                            className={`h-full ${passwordStrength.color} transition-all duration-300`}
-                            style={{ width: passwordStrength.width }}
-                          />
-                        </div>
+                {mode === 'signup' && password && (
+                  <div className="mt-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="h-1 flex-1 bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${passwordStrength.color} transition-all duration-300`}
+                          style={{ width: passwordStrength.width }}
+                        />
+                      </div>
+                      {passwordStrength.level && (
                         <span className="font-mono text-xs text-muted-foreground">
                           {passwordStrength.level}
                         </span>
-                      </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
 
-              {/* Sign Up: Confirm Password */}
+              {/* Confirm Password - Only for signup */}
               {mode === 'signup' && (
                 <div>
                   <label className="block font-mono text-xs text-muted-foreground mb-2">
-                    Confirm Secrets
+                    Confirm Password
                   </label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -301,13 +291,13 @@ export function AuthPage() {
                       type={showPassword ? 'text' : 'password'}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm your secret key"
-                      className="input-terminal w-full pl-10"
+                      placeholder="Confirm your password"
+                      className="input-terminal w-full pl-10 pr-10"
                       required
                     />
                     {confirmPassword && (
                       <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        {confirmPassword === secrets ? (
+                        {confirmPassword === password ? (
                           <CheckCircle2 className="h-4 w-4 text-success" />
                         ) : (
                           <AlertCircle className="h-4 w-4 text-destructive" />

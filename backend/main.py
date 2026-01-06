@@ -44,14 +44,19 @@ app = FastAPI(
 )
 
 # CORS Configuration
+# Allow all localhost ports for development and Vercel for production
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,https://*.vercel.app"
+    "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005"
 ).split(",")
+
+# Add wildcard support for Vercel
+if os.getenv("ENVIRONMENT", "development") == "production":
+    CORS_ORIGINS.append("https://*.vercel.app")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=CORS_ORIGINS if os.getenv("ENVIRONMENT") != "production" else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -117,25 +122,39 @@ class TodoResponse(BaseModel):
 
 
 # ============================================
-# Example Todo Endpoints (ready for Phase 4 implementation)
+# Example Task Endpoints (ready for Phase 4 implementation)
 # ============================================
 # TODO: Implement CRUD endpoints with SQLModel and JWT authentication
-# - GET /todos - List all todos
-# - POST /todos - Create new todo
-# - GET /todos/{id} - Get specific todo
-# - PUT /todos/{id} - Update todo
-# - DELETE /todos/{id} - Delete todo
+# - GET /tasks/ - List all tasks
+# - POST /tasks/ - Create new task
+# - GET /tasks/{id} - Get specific task
+# - PUT /tasks/{id} - Update task
+# - DELETE /tasks/{id} - Delete task
 
-@app.get("/todos", tags=["Todos"])
-async def list_todos():
-    """List all todos - Placeholder for Phase 4 implementation."""
-    return {"message": "Todo endpoints ready for Phase 4 implementation"}
+@app.get("/tasks/", tags=["Tasks"])
+async def list_tasks():
+    """List all tasks - Placeholder for Phase 4 implementation."""
+    return []
 
 
-@app.post("/todos", tags=["Todos"], status_code=status.HTTP_201_CREATED)
-async def create_todo(todo: TodoCreate):
-    """Create a new todo - Placeholder for Phase 4 implementation."""
-    return {"message": "Todo creation ready for Phase 4 implementation", "todo": todo}
+@app.post("/tasks/", tags=["Tasks"], status_code=status.HTTP_201_CREATED)
+async def create_task(todo: TodoCreate):
+    """Create a new task - Placeholder for Phase 4 implementation."""
+    from datetime import datetime
+    import uuid
+    
+    # Return a mock task with proper structure for frontend
+    return {
+        "id": str(uuid.uuid4()),
+        "title": todo.title,
+        "description": todo.description,
+        "status": "pending",
+        "priority": "medium",
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+        "due_date": None,
+        "user_id": "placeholder-user"
+    }
 
 
 if __name__ == "__main__":
