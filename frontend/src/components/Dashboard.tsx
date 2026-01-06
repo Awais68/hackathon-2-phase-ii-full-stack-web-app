@@ -31,7 +31,7 @@ import {
 import VoiceCommandButton from './VoiceCommandButton';
 import ParticlesBackground from './ParticlesBackground';
 import { api } from '@/lib/api';
-import { useAuthStore } from '@/stores/useAuthStore';
+import { useSession } from '@/lib/auth-client';
 
 // Types
 interface Mission {
@@ -569,7 +569,9 @@ const AddMissionModal = ({
 // Main Dashboard Component
 export default function Dashboard() {
     const router = useRouter();
-    const { isAuthenticated, tokens } = useAuthStore();
+    const { data: session, isPending } = useSession();
+    const isAuthenticated = !!session?.user;
+
     const [missions, setMissions] = useState<Mission[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('all');
@@ -592,18 +594,22 @@ export default function Dashboard() {
     useEffect(() => {
         const fetchTasks = async () => {
             try {
-                setLoading(true);
-
-                // Check authentication
-                if (!isAuthenticated || !tokens) {
-                    console.log('Not authenticated - showing empty dashboard');
-                    setLoading(false);
-                    // Don't redirect immediately, let user see the dashboard
-                    // They'll be redirected when they try to create a task
+                // Wait for session check to complete
+                if (isPending) {
+                    console.log('Session check in progress...');
                     return;
                 }
 
-                console.log('Fetching tasks with token:', tokens.accessToken?.substring(0, 20) + '...');
+                setLoading(true);
+
+                // Check authentication
+                if (!isAuthenticated) {
+                    console.log('Not authenticated - showing empty dashboard');
+                    setLoading(false);
+                    return;
+                }
+
+                console.log('Fetching tasks for user:', session?.user?.email);
                 const tasks = await api.tasks.list();
                 console.log('Tasks fetched successfully:', tasks.length);
 
@@ -633,7 +639,7 @@ export default function Dashboard() {
         };
 
         fetchTasks();
-    }, [router, isAuthenticated, tokens]);
+    }, [router, isAuthenticated, session, isPending]);
 
     // Check for mobile on mount and resize
     useEffect(() => {
@@ -1183,10 +1189,12 @@ export default function Dashboard() {
                         </div>
 
                         {/* Mission Grid */}
-                        {loading ? (
+                        {(loading || isPending) ? (
                             <div className="flex flex-col items-center justify-center h-64 text-center">
                                 <RefreshCw className={`w-16 h-16 mb-4 animate-spin ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
-                                <h3 className={`text-xl font-semibold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Loading missions...</h3>
+                                <h3 className={`text-xl font-semibold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                    {isPending ? 'Checking authentication...' : 'Loading missions...'}
+                                </h3>
                             </div>
                         ) : filteredMissions.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-64 text-center">

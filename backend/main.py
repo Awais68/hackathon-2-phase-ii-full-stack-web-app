@@ -5,15 +5,65 @@ Deployed on Render with Neon PostgreSQL
 import os
 from datetime import datetime
 from contextlib import asynccontextmanager
+from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 
 # Import environment variables
 from dotenv import load_dotenv
 load_dotenv()
+
+# Database setup
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(DATABASE_URL) if DATABASE_URL else None
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
+Base = declarative_base()
+
+# Database Models
+class TaskDB(Base):
+    __tablename__ = "tasks"
+    
+    id = Column(String, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(String)
+    status = Column(String, default="pending")
+    priority = Column(String, default="medium")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    due_date = Column(DateTime, nullable=True)
+    user_id = Column(String, default="placeholder-user")
+
+# Create tables
+if engine:
+    # Drop existing tasks table if it has old schema
+    try:
+        Base.metadata.drop_all(bind=engine, tables=[TaskDB.__table__])
+        print("Dropped old tasks table")
+    except Exception as e:
+        print(f"No existing table to drop: {e}")
+    
+    # Create tables with new schema
+    Base.metadata.create_all(bind=engine)
+    print("Created tasks table with new schema")
+
+# Dependency to get DB session
+def get_db():
+    if SessionLocal is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 # Health check response model
 class HealthResponse(BaseModel):
@@ -132,28 +182,43 @@ class TodoResponse(BaseModel):
 # - DELETE /tasks/{id} - Delete task
 
 @app.get("/tasks/", tags=["Tasks"])
-async def list_tasks():
-    """List all tasks - Placeholder for Phase 4 implementation."""
-    return []
+async def list_tasks(db: Session = Depends(get_db)):
+    """List all tasks from database."""
+    tasks = db.query(TaskDB).all()
+    return tasks
 
 
 @app.post("/tasks/", tags=["Tasks"], status_code=status.HTTP_201_CREATED)
-async def create_task(todo: TodoCreate):
-    """Create a new task - Placeholder for Phase 4 implementation."""
-    from datetime import datetime
+async def create_task(todo: TodoCreate, db: Session = Depends(get_db)):
+    """Create a new task and save to database."""
     import uuid
     
-    # Return a mock task with proper structure for frontend
+    # Create task in database
+    db_task = TaskDB(
+        id=str(uuid.uuid4()),
+        title=todo.title,
+        description=todo.description,
+        status="pending",
+        priority="medium",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    
+    db.add(db_task)
+    db.commit()
+    db.refresh(db_task)
+    
+    # Return task data
     return {
-        "id": str(uuid.uuid4()),
-        "title": todo.title,
-        "description": todo.description,
-        "status": "pending",
-        "priority": "medium",
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat(),
-        "due_date": None,
-        "user_id": "placeholder-user"
+        "id": db_task.id,
+        "title": db_task.title,
+        "description": db_task.description,
+        "status": db_task.status,
+        "priority": db_task.priority,
+        "created_at": db_task.created_at.isoformat(),
+        "updated_at": db_task.updated_at.isoformat(),
+        "due_date": db_task.due_date.isoformat() if db_task.due_date else None,
+        "user_id": db_task.user_id
     }
 
 
