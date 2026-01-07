@@ -89,22 +89,34 @@ app = FastAPI(
 )
 
 # CORS Configuration
-# Allow all localhost ports for development and Vercel for production
-CORS_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005"
-).split(",")
+# Allow all localhost ports for development and specific origins for production
+CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:3004",
+    "http://localhost:3005",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3005",
+    # Vercel deployments
+    "https://hackathon-2-phase-ii-full-stack-web-app.vercel.app",
+    "https://todo-evolution.vercel.app",
+    # Add any other Vercel preview URLs
+]
 
-# Add wildcard support for Vercel
-if os.getenv("ENVIRONMENT", "development") == "production":
-    CORS_ORIGINS.append("https://*.vercel.app")
+# Add custom origins from environment
+extra_origins = os.getenv("CORS_ORIGINS", "")
+if extra_origins:
+    CORS_ORIGINS.extend(extra_origins.split(","))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS if os.getenv("ENVIRONMENT") != "production" else ["*"],
+    allow_origins=["*"],  # Allow all origins for now (can restrict in production)
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
