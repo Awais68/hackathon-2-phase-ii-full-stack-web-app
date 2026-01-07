@@ -844,6 +844,7 @@ export default function Dashboard() {
         if (!editingMission) return;
 
         try {
+            const userId = session?.user?.id || session?.user?.email || 'anonymous';
             await api.tasks.update(editingMission.id, {
                 title: updatedMission.title,
                 description: updatedMission.description,
@@ -853,7 +854,7 @@ export default function Dashboard() {
                 recursion: updatedMission.recursion,
                 category: updatedMission.category,
                 tags: updatedMission.tags,
-            });
+            }, userId);
 
             setMissions(prev => prev.map(m =>
                 m.id === editingMission.id
@@ -866,7 +867,7 @@ export default function Dashboard() {
             console.error('Failed to update task:', error);
             alert('Failed to update task. Please try again.');
         }
-    }, [editingMission]);
+    }, [editingMission, session]);
 
     // Toggle mission completion
     const handleToggleComplete = useCallback(async (id: string) => {
@@ -874,8 +875,9 @@ export default function Dashboard() {
             const mission = missions.find(m => m.id === id);
             if (!mission) return;
 
+            const userId = session?.user?.id || session?.user?.email || 'anonymous';
             const newStatus = mission.status === 'completed' ? 'pending' : 'completed';
-            await api.tasks.update(id, { status: newStatus });
+            await api.tasks.update(id, { status: newStatus }, userId);
 
             setMissions(prev => prev.map(m =>
                 m.id === id
@@ -886,7 +888,7 @@ export default function Dashboard() {
             console.error('Failed to update task:', error);
             alert('Failed to update task. Please try again.');
         }
-    }, [missions]);
+    }, [missions, session]);
 
     // Voice command handler - FIXED to properly add tasks
     const handleVoiceCommand = useCallback((command: string): boolean => {
@@ -1100,20 +1102,7 @@ export default function Dashboard() {
                             </div>
                         </div>
 
-                        {/* Logout Button */}
-                        <button
-                            onClick={async () => {
-                                await signOut();
-                                router.push('/auth');
-                            }}
-                            className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all
-                                ${isDark
-                                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/50'
-                                    : 'bg-red-100 text-red-600 hover:bg-red-200 border border-red-300'}`}
-                        >
-                            <LogOut className="w-4 h-4" />
-                            <span className="text-sm font-medium">Logout</span>
-                        </button>
+
 
                         {/* App Title */}
                         <h1 className={`text-xl font-bold ${isDark ? 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500' : 'text-cyan-600'}`}>
@@ -1164,6 +1153,20 @@ export default function Dashboard() {
                             </div>
                         </div>
                     </div>
+                    {/* Logout Button */}
+                    <button
+                        onClick={async () => {
+                            await signOut();
+                            router.push('/');
+                        }}
+                        className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all
+                                ${isDark
+                                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/50'
+                                : 'bg-red-100 text-red-600 hover:bg-red-200 border border-red-300'}`}
+                    >
+                        <LogOut className="w-4 h-4" />
+                        <span className="text-sm font-medium">Session Dismissed</span>
+                    </button>
                 </aside>
 
                 {/* Main Content */}
@@ -1454,6 +1457,7 @@ export default function Dashboard() {
                 </main>
             </div>
 
+
             {/* Add Mission Modal */}
             <AnimatePresence>
                 {showAddModal && (
@@ -1478,6 +1482,7 @@ export default function Dashboard() {
                     />
                 )}
             </AnimatePresence>
+
 
         </div>
     );

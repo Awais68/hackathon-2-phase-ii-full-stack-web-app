@@ -336,11 +336,15 @@ async def create_task(todo: TodoCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/tasks/{task_id}", tags=["Tasks"])
-async def get_task(task_id: str, db: Session = Depends(get_db)):
+async def get_task(task_id: str, user_id: str | None = None, db: Session = Depends(get_db)):
     """Get a specific task by ID."""
     task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Verify user ownership if user_id provided
+    if user_id and task.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this task")
     
     return {
         "id": task.id,
@@ -359,11 +363,15 @@ async def get_task(task_id: str, db: Session = Depends(get_db)):
 
 
 @app.put("/tasks/{task_id}", tags=["Tasks"])
-async def update_task(task_id: str, todo: TodoUpdate, db: Session = Depends(get_db)):
+async def update_task(task_id: str, todo: TodoUpdate, user_id: str | None = None, db: Session = Depends(get_db)):
     """Update a task."""
     task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Verify user ownership if user_id provided
+    if user_id and task.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this task")
     
     # Update fields if provided
     if todo.title is not None:

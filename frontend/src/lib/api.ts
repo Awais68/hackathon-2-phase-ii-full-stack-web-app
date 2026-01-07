@@ -189,8 +189,9 @@ export const api = {
     /**
      * Get a single task by ID
      */
-    get: async (id: string) => {
-      return fetchApi<Task>(`/tasks/${id}`)
+    get: async (id: string, userId?: string) => {
+      const params = userId ? `?user_id=${encodeURIComponent(userId)}` : ''
+      return fetchApi<Task>(`/tasks/${id}${params}`)
     },
 
     /**
@@ -236,8 +237,9 @@ export const api = {
       recursion: string;
       category: string;
       tags: string[];
-    }>) => {
-      return fetchApi<Task>(`/tasks/${id}`, {
+    }>, userId?: string) => {
+      const params = userId ? `?user_id=${encodeURIComponent(userId)}` : ''
+      return fetchApi<Task>(`/tasks/${id}${params}`, {
         method: 'PUT',
         body: JSON.stringify({
           title: data.title,
