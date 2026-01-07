@@ -581,6 +581,7 @@ export default function Dashboard() {
     const [showFilters, setShowFilters] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [isDark, setIsDark] = useState(() => {
         // Initialize from localStorage or default to true
         if (typeof window !== 'undefined') {
@@ -610,20 +611,22 @@ export default function Dashboard() {
                 }
 
                 console.log('Fetching tasks for user:', session?.user?.email);
-                const tasks = await api.tasks.list();
+                const userId = session?.user?.id || session?.user?.email;
+                const tasks = await api.tasks.list({ userId });
                 console.log('Tasks fetched successfully:', tasks.length);
 
                 // Map backend tasks to Mission format
-                const mappedTasks: Mission[] = tasks.map(task => ({
+                const mappedTasks: Mission[] = tasks.map((task: any) => ({
                     id: task.id.toString(),
                     title: task.title,
                     description: task.description || '',
-                    priority: 'medium' as const, // Default since backend doesn't have this
-                    status: task.completed ? 'completed' as const : 'pending' as const,
-                    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                    priority: (task.priority || 'medium') as 'critical' | 'high' | 'medium' | 'low',
+                    status: (task.status || 'pending') as 'pending' | 'active' | 'completed' | 'failed',
+                    dueDate: task.dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
                     createdAt: task.createdAt,
-                    tags: [],
-                    category: 'General',
+                    tags: task.tags || [],
+                    category: task.category || 'General',
+                    recursion: task.recursion
                 }));
                 setMissions(mappedTasks);
             } catch (error) {
@@ -712,10 +715,20 @@ export default function Dashboard() {
         try {
             console.log('Creating task with data:', missionData);
 
-            // Create task in backend
+            // Get user ID from session
+            const userId = session?.user?.id || session?.user?.email || 'anonymous';
+
+            // Create task in backend with all fields
             const task = await api.tasks.create({
                 title: missionData.title,
                 description: missionData.description,
+                priority: missionData.priority,
+                status: missionData.status,
+                dueDate: missionData.dueDate,
+                recursion: missionData.recursion,
+                category: missionData.category,
+                tags: missionData.tags,
+                userId: userId
             });
 
             console.log('Task created successfully:', task);
@@ -724,7 +737,7 @@ export default function Dashboard() {
             const newMission: Mission = {
                 ...missionData,
                 id: task.id.toString(),
-                createdAt: task.createdAt,
+                createdAt: (task as any).createdAt || new Date().toISOString(),
             };
             setMissions(prev => [newMission, ...prev]);
             setShowAddModal(false);
@@ -752,7 +765,7 @@ export default function Dashboard() {
 
             alert(errorMessage);
         }
-    }, [router]);
+    }, [router, session]);
 
     // Delete mission
     const handleDeleteMission = useCallback(async (id: string) => {
@@ -929,14 +942,80 @@ export default function Dashboard() {
             {/* Particles Background for dark mode */}
             {isDark && <ParticlesBackground />}
 
-            <div className="relative z-10 flex">
-                {/* Sidebar - Always Visible */}
+            <div className="relative z-10 flex flex-col md:flex-row">
+                {/* Mobile Header with Menu Toggle */}
+                <div className={`md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between p-4 backdrop-blur-xl border-b
+                    ${isDark ? 'bg-gray-900/95 border-cyan-500/30' : 'bg-white/95 border-sky-200'}`}>
+                    <button
+                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                        className={`p-2 rounded-lg ${isDark ? 'text-cyan-400 hover:bg-gray-800' : 'text-cyan-600 hover:bg-gray-100'}`}
+                    >
+                        <Menu className="w-6 h-6" />
+                    </button>
+                    <h1 className={`text-lg font-bold ${isDark ? 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500' : 'text-cyan-600'}`}>
+                        <Target className="inline w-5 h-5 mr-2" />
+                        Mission Control
+                    </h1>
+                    {session?.user?.image ? (
+                        <img src={session.user.image} alt="Profile" className="w-8 h-8 rounded-full border-2 border-cyan-500 object-cover" />
+                    ) : (
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm
+                            ${isDark ? 'bg-gradient-to-br from-cyan-500 to-blue-600' : 'bg-gradient-to-br from-cyan-400 to-blue-500'}`}>
+                            {session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || '?'}
+                        </div>
+                    )}
+                </div>
+
+                {/* Mobile Overlay */}
+                {sidebarOpen && (
+                    <div
+                        className="md:hidden fixed inset-0 bg-black/50 z-40"
+                        onClick={() => setSidebarOpen(false)}
+                    />
+                )}
+
+                {/* Sidebar - Hidden on mobile, visible on desktop */}
                 <aside
-                    className={`relative w-72 backdrop-blur-xl border-r flex flex-col h-screen
-                        ${isDark ? 'bg-gray-900/80 border-cyan-500/30' : 'bg-white/80 border-sky-200'}`}
+                    className={`fixed md:relative w-72 backdrop-blur-xl border-r flex flex-col h-screen z-50 transition-transform duration-300
+                        ${isDark ? 'bg-gray-900/95 border-cyan-500/30' : 'bg-white/95 border-sky-200'}
+                        ${isMobile ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : 'translate-x-0'}`}
                 >
-                    {/* Sidebar Header */}
-                    <div className={`p-6 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                    {/* Sidebar Header with User Profile */}
+                    <div className={`p-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                        {/* Mobile Close Button */}
+                        {isMobile && (
+                            <button
+                                onClick={() => setSidebarOpen(false)}
+                                className={`absolute top-4 right-4 p-2 rounded-lg ${isDark ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        )}
+                        {/* User Profile Section */}
+                        <div className="flex items-center gap-3 mb-4">
+                            {session?.user?.image ? (
+                                <img
+                                    src={session.user.image}
+                                    alt="Profile"
+                                    className="w-10 h-10 rounded-full border-2 border-cyan-500 object-cover"
+                                />
+                            ) : (
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg
+                                    ${isDark ? 'bg-gradient-to-br from-cyan-500 to-blue-600' : 'bg-gradient-to-br from-cyan-400 to-blue-500'}`}>
+                                    {session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || '?'}
+                                </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-semibold truncate ${isDark ? 'text-white' : 'text-gray-800'}`}>
+                                    {session?.user?.name || 'User'}
+                                </p>
+                                <p className={`text-xs truncate ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                    {session?.user?.email || ''}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* App Title */}
                         <h1 className={`text-xl font-bold ${isDark ? 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500' : 'text-cyan-600'}`}>
                             <Target className="inline w-5 h-5 mr-2" />
                             Mission Control
@@ -988,9 +1067,9 @@ export default function Dashboard() {
                 </aside>
 
                 {/* Main Content */}
-                <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-                    {/* Top Bar */}
-                    <header className={`backdrop-blur-xl border-b px-4 md:px-6 py-4
+                <main className={`flex-1 flex flex-col min-h-screen overflow-hidden ${isMobile ? 'pt-16' : ''}`}>
+                    {/* Top Bar - Hidden on mobile since we have mobile header */}
+                    <header className={`hidden md:block backdrop-blur-xl border-b px-4 md:px-6 py-4
                         ${isDark ? 'bg-gray-900/60 border-gray-700' : 'bg-white/60 border-gray-200'}`}>
                         <div className="flex items-center justify-between gap-4">
                             {/* Search Bar */}
@@ -1106,6 +1185,45 @@ export default function Dashboard() {
 
                     {/* Dashboard Content */}
                     <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                        {/* Mobile Search and Actions Bar */}
+                        <div className="md:hidden mb-4 space-y-3">
+                            <div className="relative">
+                                <Search className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search missions..."
+                                    className={`w-full border rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-1 transition-all duration-200
+                                        ${isDark
+                                            ? 'bg-gray-800/80 border-gray-600 text-white placeholder-gray-400 focus:border-cyan-400 focus:ring-cyan-400/50'
+                                            : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400 focus:border-cyan-500 focus:ring-cyan-500/50'}`}
+                                />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setShowFilters(!showFilters)}
+                                    className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl transition-all
+                                        ${showFilters
+                                            ? 'bg-cyan-500/20 text-cyan-400'
+                                            : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}
+                                >
+                                    <Filter className="w-4 h-4" />
+                                    <span className="text-sm">Filters</span>
+                                </button>
+                                <VoiceCommandButton onCommand={handleVoiceCommand} />
+                                <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => setShowAddModal(true)}
+                                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 text-white"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    <span className="text-sm">Add</span>
+                                </motion.button>
+                            </div>
+                        </div>
+
                         {/* Authentication Warning Banner */}
                         {!isAuthenticated && (
                             <motion.div

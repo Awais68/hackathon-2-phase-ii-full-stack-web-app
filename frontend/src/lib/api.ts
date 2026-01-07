@@ -161,36 +161,95 @@ export const api = {
    */
   tasks: {
     /**
-     * Get all tasks for authenticated user
+     * Get all tasks for authenticated user with optional filters
      */
-    list: async () => {
-      return fetchWithAuth<Task[]>('/tasks/')
+    list: async (options?: {
+      userId?: string;
+      status?: string;
+      priority?: string;
+      sortBy?: string;
+      order?: string;
+    }) => {
+      let url = '/tasks/'
+      const params = new URLSearchParams()
+
+      if (options?.userId) params.append('user_id', options.userId)
+      if (options?.status) params.append('status', options.status)
+      if (options?.priority) params.append('priority', options.priority)
+      if (options?.sortBy) params.append('sort_by', options.sortBy)
+      if (options?.order) params.append('order', options.order)
+
+      if (params.toString()) {
+        url += '?' + params.toString()
+      }
+
+      return fetchApi<Task[]>(url)
     },
 
     /**
      * Get a single task by ID
      */
     get: async (id: string) => {
-      return fetchWithAuth<Task>(`/tasks/${id}`)
+      return fetchApi<Task>(`/tasks/${id}`)
     },
 
     /**
      * Create a new task
      */
-    create: async (data: Pick<Task, 'title' | 'description'>) => {
-      return fetchWithAuth<Task>('/tasks/', {
+    create: async (data: {
+      title: string;
+      description?: string;
+      priority?: string;
+      status?: string;
+      dueDate?: string;
+      recursion?: string;
+      category?: string;
+      tags?: string[];
+      userId?: string;
+    }) => {
+      return fetchApi<Task>('/tasks/', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          title: data.title,
+          description: data.description,
+          priority: data.priority || 'medium',
+          status: data.status || 'pending',
+          due_date: data.dueDate,
+          recursion: data.recursion,
+          category: data.category || 'General',
+          tags: data.tags || [],
+          user_id: data.userId
+        }),
       })
     },
 
     /**
      * Update an existing task
      */
-    update: async (id: string, data: Partial<Task>) => {
-      return fetchWithAuth<Task>(`/tasks/${id}`, {
+    update: async (id: string, data: Partial<{
+      title: string;
+      description: string;
+      status: string;
+      priority: string;
+      completed: boolean;
+      dueDate: string;
+      recursion: string;
+      category: string;
+      tags: string[];
+    }>) => {
+      return fetchApi<Task>(`/tasks/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          title: data.title,
+          description: data.description,
+          status: data.status,
+          priority: data.priority,
+          completed: data.completed,
+          due_date: data.dueDate,
+          recursion: data.recursion,
+          category: data.category,
+          tags: data.tags
+        }),
       })
     },
 
@@ -198,7 +257,7 @@ export const api = {
      * Delete a task
      */
     delete: async (id: string) => {
-      return fetchWithAuth<void>(`/tasks/${id}`, {
+      return fetchApi<{ message: string; id: string }>(`/tasks/${id}`, {
         method: 'DELETE',
       })
     },

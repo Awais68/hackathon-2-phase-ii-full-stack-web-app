@@ -40,20 +40,15 @@ class TaskDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     due_date = Column(DateTime, nullable=True)
-    user_id = Column(String, default="placeholder-user")
+    user_id = Column(String, index=True)
+    recursion = Column(String, nullable=True)  # daily, weekly, monthly
+    category = Column(String, default="General")
+    tags = Column(String, nullable=True)  # comma-separated tags
 
 # Create tables
 if engine:
-    # Drop existing tasks table if it has old schema
-    try:
-        Base.metadata.drop_all(bind=engine, tables=[TaskDB.__table__])
-        print("Dropped old tasks table")
-    except Exception as e:
-        print(f"No existing table to drop: {e}")
-    
-    # Create tables with new schema
     Base.metadata.create_all(bind=engine)
-    print("Created tasks table with new schema")
+    print("Database tables ready")
 
 # Dependency to get DB session
 def get_db():
@@ -151,12 +146,25 @@ async def root():
 class TodoCreate(BaseModel):
     title: str
     description: str | None = None
+    priority: str = "medium"
+    status: str = "pending"
+    due_date: str | None = None
+    recursion: str | None = None
+    category: str = "General"
+    tags: List[str] = []
+    user_id: str | None = None
 
 
 class TodoUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     completed: bool | None = None
+    status: str | None = None
+    priority: str | None = None
+    due_date: str | None = None
+    recursion: str | None = None
+    category: str | None = None
+    tags: List[str] | None = None
 
 
 class TodoResponse(BaseModel):
@@ -182,10 +190,65 @@ class TodoResponse(BaseModel):
 # - DELETE /tasks/{id} - Delete task
 
 @app.get("/tasks/", tags=["Tasks"])
-async def list_tasks(db: Session = Depends(get_db)):
-    """List all tasks from database."""
-    tasks = db.query(TaskDB).all()
-    return tasks
+async def list_tasks(
+    user_id: str | None = None,
+    status: str | None = None,
+    priority: str | None = None,
+    sort_by: str = "created_at",
+    order: str = "desc",
+    db: Session = Depends(get_db)
+):
+    """List all tasks from database with optional filters."""
+    query = db.query(TaskDB)
+    
+    # Filter by user_id
+    if user_id:
+        query = query.filter(TaskDB.user_id == user_id)
+    
+    # Filter by status
+    if status:
+        query = query.filter(TaskDB.status == status)
+    
+    # Filter by priority
+    if priority:
+        query = query.filter(TaskDB.priority == priority)
+    
+    # Sort
+    if sort_by == "created_at":
+        if order == "desc":
+            query = query.order_by(TaskDB.created_at.desc())
+        else:
+            query = query.order_by(TaskDB.created_at.asc())
+    elif sort_by == "due_date":
+        if order == "desc":
+            query = query.order_by(TaskDB.due_date.desc())
+        else:
+            query = query.order_by(TaskDB.due_date.asc())
+    elif sort_by == "priority":
+        # Custom priority order
+        query = query.order_by(TaskDB.priority)
+    
+    tasks = query.all()
+    
+    # Convert to response format
+    result = []
+    for task in tasks:
+        result.append({
+            "id": task.id,
+            "title": task.title,
+            "description": task.description,
+            "status": task.status,
+            "priority": task.priority,
+            "createdAt": task.created_at.isoformat() if task.created_at else None,
+            "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
+            "dueDate": task.due_date.isoformat() if task.due_date else None,
+            "userId": task.user_id,
+            "recursion": task.recursion,
+            "category": task.category or "General",
+            "tags": task.tags.split(",") if task.tags else []
+        })
+    
+    return result
 
 
 @app.post("/tasks/", tags=["Tasks"], status_code=status.HTTP_201_CREATED)
@@ -193,15 +256,28 @@ async def create_task(todo: TodoCreate, db: Session = Depends(get_db)):
     """Create a new task and save to database."""
     import uuid
     
+    # Parse due_date if provided
+    due_date = None
+    if todo.due_date:
+        try:
+            due_date = datetime.fromisoformat(todo.due_date.replace('Z', '+00:00'))
+        except:
+            pass
+    
     # Create task in database
     db_task = TaskDB(
         id=str(uuid.uuid4()),
         title=todo.title,
         description=todo.description,
-        status="pending",
-        priority="medium",
+        status=todo.status,
+        priority=todo.priority,
         created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        updated_at=datetime.utcnow(),
+        due_date=due_date,
+        user_id=todo.user_id or "anonymous",
+        recursion=todo.recursion,
+        category=todo.category,
+        tags=",".join(todo.tags) if todo.tags else None
     )
     
     db.add(db_task)
@@ -215,11 +291,100 @@ async def create_task(todo: TodoCreate, db: Session = Depends(get_db)):
         "description": db_task.description,
         "status": db_task.status,
         "priority": db_task.priority,
-        "created_at": db_task.created_at.isoformat(),
-        "updated_at": db_task.updated_at.isoformat(),
-        "due_date": db_task.due_date.isoformat() if db_task.due_date else None,
-        "user_id": db_task.user_id
+        "createdAt": db_task.created_at.isoformat(),
+        "updatedAt": db_task.updated_at.isoformat(),
+        "dueDate": db_task.due_date.isoformat() if db_task.due_date else None,
+        "userId": db_task.user_id,
+        "recursion": db_task.recursion,
+        "category": db_task.category,
+        "tags": db_task.tags.split(",") if db_task.tags else []
     }
+
+
+@app.get("/tasks/{task_id}", tags=["Tasks"])
+async def get_task(task_id: str, db: Session = Depends(get_db)):
+    """Get a specific task by ID."""
+    task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return {
+        "id": task.id,
+        "title": task.title,
+        "description": task.description,
+        "status": task.status,
+        "priority": task.priority,
+        "createdAt": task.created_at.isoformat() if task.created_at else None,
+        "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
+        "dueDate": task.due_date.isoformat() if task.due_date else None,
+        "userId": task.user_id,
+        "recursion": task.recursion,
+        "category": task.category,
+        "tags": task.tags.split(",") if task.tags else []
+    }
+
+
+@app.put("/tasks/{task_id}", tags=["Tasks"])
+async def update_task(task_id: str, todo: TodoUpdate, db: Session = Depends(get_db)):
+    """Update a task."""
+    task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Update fields if provided
+    if todo.title is not None:
+        task.title = todo.title
+    if todo.description is not None:
+        task.description = todo.description
+    if todo.status is not None:
+        task.status = todo.status
+    if todo.completed is not None:
+        task.status = "completed" if todo.completed else "pending"
+    if todo.priority is not None:
+        task.priority = todo.priority
+    if todo.due_date is not None:
+        try:
+            task.due_date = datetime.fromisoformat(todo.due_date.replace('Z', '+00:00'))
+        except:
+            pass
+    if todo.recursion is not None:
+        task.recursion = todo.recursion
+    if todo.category is not None:
+        task.category = todo.category
+    if todo.tags is not None:
+        task.tags = ",".join(todo.tags)
+    
+    task.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(task)
+    
+    return {
+        "id": task.id,
+        "title": task.title,
+        "description": task.description,
+        "status": task.status,
+        "priority": task.priority,
+        "createdAt": task.created_at.isoformat() if task.created_at else None,
+        "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
+        "dueDate": task.due_date.isoformat() if task.due_date else None,
+        "userId": task.user_id,
+        "recursion": task.recursion,
+        "category": task.category,
+        "tags": task.tags.split(",") if task.tags else []
+    }
+
+
+@app.delete("/tasks/{task_id}", tags=["Tasks"])
+async def delete_task(task_id: str, db: Session = Depends(get_db)):
+    """Delete a task."""
+    task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    db.delete(task)
+    db.commit()
+    
+    return {"message": "Task deleted successfully", "id": task_id}
 
 
 if __name__ == "__main__":
