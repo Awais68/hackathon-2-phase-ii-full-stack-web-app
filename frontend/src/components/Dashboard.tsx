@@ -27,11 +27,12 @@ import {
     Activity,
     Zap,
     BarChart3,
+    LogOut,
 } from 'lucide-react';
 import VoiceCommandButton from './VoiceCommandButton';
 import ParticlesBackground from './ParticlesBackground';
 import { api } from '@/lib/api';
-import { useSession } from '@/lib/auth-client';
+import { useSession, signOut } from '@/lib/auth-client';
 
 // Types
 interface Mission {
@@ -1098,6 +1099,21 @@ export default function Dashboard() {
                                 </p>
                             </div>
                         </div>
+
+                        {/* Logout Button */}
+                        <button
+                            onClick={async () => {
+                                await signOut();
+                                router.push('/auth');
+                            }}
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all
+                                ${isDark
+                                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/50'
+                                    : 'bg-red-100 text-red-600 hover:bg-red-200 border border-red-300'}`}
+                        >
+                            <LogOut className="w-4 h-4" />
+                            <span className="text-sm font-medium">Logout</span>
+                        </button>
 
                         {/* App Title */}
                         <h1 className={`text-xl font-bold ${isDark ? 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500' : 'text-cyan-600'}`}>
