@@ -44,6 +44,27 @@ class TaskDB(Base):
     recursion = Column(String, nullable=True)  # daily, weekly, monthly
     category = Column(String, default="General")
     tags = Column(String, nullable=True)  # comma-separated tags
+    is_deleted = Column(Boolean, default=False)  # Soft delete flag
+    deleted_at = Column(DateTime, nullable=True)  # Timestamp when deleted
+
+
+# Trash/Bin Model for deleted tasks
+class TrashDB(Base):
+    __tablename__ = "trash"
+    
+    id = Column(String, primary_key=True, index=True)
+    task_id = Column(String, index=True)  # Original task ID
+    title = Column(String, nullable=False)
+    description = Column(String)
+    status = Column(String)
+    priority = Column(String)
+    created_at = Column(DateTime)
+    deleted_at = Column(DateTime, default=datetime.utcnow)
+    user_id = Column(String, index=True)
+    recursion = Column(String, nullable=True)
+    category = Column(String)
+    tags = Column(String, nullable=True)
+    due_date = Column(DateTime, nullable=True)
 
 # Create tables
 if engine:
@@ -177,6 +198,7 @@ class TodoUpdate(BaseModel):
     recursion: str | None = None
     category: str | None = None
     tags: List[str] | None = None
+    is_deleted: bool | None = None
 
 
 class TodoResponse(BaseModel):
@@ -210,8 +232,8 @@ async def list_tasks(
     order: str = "desc",
     db: Session = Depends(get_db)
 ):
-    """List all tasks from database with optional filters."""
-    query = db.query(TaskDB)
+    """List all tasks from database with optional filters (excluding deleted)."""
+    query = db.query(TaskDB).filter(TaskDB.is_deleted == False)  # Exclude deleted tasks
     
     # Filter by user_id
     if user_id:
@@ -387,16 +409,115 @@ async def update_task(task_id: str, todo: TodoUpdate, db: Session = Depends(get_
 
 
 @app.delete("/tasks/{task_id}", tags=["Tasks"])
-async def delete_task(task_id: str, db: Session = Depends(get_db)):
-    """Delete a task."""
+async def delete_task(task_id: str, user_id: str | None = None, db: Session = Depends(get_db)):
+    """Move task to trash/bin (soft delete)."""
     task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    db.delete(task)
+    # Verify user ownership if user_id provided
+    if user_id and task.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this task")
+    
+    # Move to trash
+    import uuid
+    trash_item = TrashDB(
+        id=str(uuid.uuid4()),
+        task_id=task.id,
+        title=task.title,
+        description=task.description,
+        status=task.status,
+        priority=task.priority,
+        created_at=task.created_at,
+        deleted_at=datetime.utcnow(),
+        user_id=task.user_id,
+        recursion=task.recursion,
+        category=task.category,
+        tags=task.tags,
+        due_date=task.due_date
+    )
+    db.add(trash_item)
+    
+    # Soft delete the task
+    task.is_deleted = True
+    task.deleted_at = datetime.utcnow()
+    
     db.commit()
     
-    return {"message": "Task deleted successfully", "id": task_id}
+    return {"message": "Task moved to trash", "id": task_id}
+
+
+@app.get("/trash/", tags=["Trash"])
+async def list_trash(user_id: str | None = None, db: Session = Depends(get_db)):
+    """Get all items in trash/bin."""
+    query = db.query(TrashDB)
+    
+    if user_id:
+        query = query.filter(TrashDB.user_id == user_id)
+    
+    items = query.order_by(TrashDB.deleted_at.desc()).all()
+    
+    result = []
+    for item in items:
+        result.append({
+            "id": item.id,
+            "task_id": item.task_id,
+            "title": item.title,
+            "description": item.description,
+            "status": item.status,
+            "priority": item.priority,
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
+            "user_id": item.user_id,
+            "recursion": item.recursion,
+            "category": item.category,
+            "tags": item.tags.split(",") if item.tags else [],
+            "due_date": item.due_date.isoformat() if item.due_date else None
+        })
+    
+    return result
+
+
+@app.post("/trash/{trash_id}/restore", tags=["Trash"])
+async def restore_from_trash(trash_id: str, db: Session = Depends(get_db)):
+    """Restore a task from trash."""
+    trash_item = db.query(TrashDB).filter(TrashDB.id == trash_id).first()
+    if not trash_item:
+        raise HTTPException(status_code=404, detail="Trash item not found")
+    
+    # Find the soft-deleted task
+    task = db.query(TaskDB).filter(TaskDB.id == trash_item.task_id).first()
+    if task:
+        # Restore the task
+        task.is_deleted = False
+        task.deleted_at = None
+        
+        # Remove from trash
+        db.delete(trash_item)
+        db.commit()
+        
+        return {"message": "Task restored successfully", "id": task.id}
+    else:
+        raise HTTPException(status_code=404, detail="Original task not found")
+
+
+@app.delete("/trash/{trash_id}/permanent", tags=["Trash"])
+async def permanent_delete(trash_id: str, db: Session = Depends(get_db)):
+    """Permanently delete a task from trash."""
+    trash_item = db.query(TrashDB).filter(TrashDB.id == trash_id).first()
+    if not trash_item:
+        raise HTTPException(status_code=404, detail="Trash item not found")
+    
+    # Permanently delete the task
+    task = db.query(TaskDB).filter(TaskDB.id == trash_item.task_id).first()
+    if task:
+        db.delete(task)
+    
+    # Remove from trash
+    db.delete(trash_item)
+    db.commit()
+    
+    return {"message": "Task permanently deleted", "id": trash_id}
 
 
 if __name__ == "__main__":

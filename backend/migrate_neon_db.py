@@ -15,11 +15,32 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 print(f"Connecting to database...")
 engine = create_engine(DATABASE_URL)
 
-# SQL statements to add missing columns
+# SQL statements to add missing columns and create trash table
 migrations = [
     "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recursion VARCHAR(50);",
     "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT 'General';",
     "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS tags TEXT;",
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;",
+    """
+    CREATE TABLE IF NOT EXISTS trash (
+        id VARCHAR PRIMARY KEY,
+        task_id VARCHAR,
+        title VARCHAR NOT NULL,
+        description VARCHAR,
+        status VARCHAR,
+        priority VARCHAR,
+        created_at TIMESTAMP,
+        deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        user_id VARCHAR,
+        recursion VARCHAR(50),
+        category VARCHAR(100),
+        tags TEXT,
+        due_date TIMESTAMP
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_trash_user_id ON trash(user_id);",
+    "CREATE INDEX IF NOT EXISTS idx_trash_deleted_at ON trash(deleted_at);"
 ]
 
 print("Running migrations...")

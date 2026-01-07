@@ -266,12 +266,35 @@ const MissionCard = ({
                     : 'bg-white/60 border-sky-200/60 hover:border-sky-300/80 shadow-sky-500/10'
                 }`}
         >
+            {/* Checkbox for Mark as Complete */}
+            <div className="absolute top-3 left-3 flex items-center gap-2">
+                <input
+                    type="checkbox"
+                    checked={mission.status === 'completed'}
+                    onChange={() => onToggleComplete(mission.id)}
+                    className="w-5 h-5 rounded border-2 cursor-pointer"
+                    style={{
+                        accentColor: isDark ? '#22d3ee' : '#0891b2'
+                    }}
+                />
+            </div>
+
             {/* Priority Badge */}
             <div className="absolute -top-2 -right-2">
                 <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full border ${priorityColors[mission.priority]}`}>
                     {mission.priority}
                 </span>
             </div>
+
+            {/* Delete Icon */}
+            <button
+                onClick={() => onDelete(mission.id)}
+                className={`absolute top-3 right-12 p-1.5 rounded-lg transition-colors
+                    ${isDark ? 'text-red-400 hover:bg-red-500/20' : 'text-red-600 hover:bg-red-100'}`}
+                title="Move to Trash"
+            >
+                <Trash2 className="w-4 h-4" />
+            </button>
 
             {/* Menu Button */}
             <button
@@ -324,11 +347,17 @@ const MissionCard = ({
                 </span>
             </div>
 
-            {/* Title */}
-            <h3 className={`text-lg font-bold mb-2 pr-8 ${isDark ? 'text-white' : 'text-gray-800'}`}>{mission.title}</h3>
+            {/* Title with strikethrough for completed */}
+            <h3 className={`text-lg font-bold mb-2 pr-8 pl-8 ${isDark ? 'text-white' : 'text-gray-800'} 
+                ${mission.status === 'completed' ? 'line-through opacity-60' : ''}`}>
+                {mission.title}
+            </h3>
 
-            {/* Description */}
-            <p className={`text-sm mb-4 line-clamp-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{mission.description}</p>
+            {/* Description with reduced opacity for completed */}
+            <p className={`text-sm mb-4 line-clamp-2 pl-8 ${isDark ? 'text-gray-400' : 'text-gray-600'}
+                ${mission.status === 'completed' ? 'line-through opacity-50' : ''}`}>
+                {mission.description}
+            </p>
 
             {/* Details Grid */}
             <div className={`grid grid-cols-2 gap-3 text-xs mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -373,23 +402,43 @@ const AddMissionModal = ({
     isOpen,
     onClose,
     onAdd,
-    isDark
+    isDark,
+    initialData,
+    isEditMode = false
 }: {
     isOpen: boolean;
     onClose: () => void;
     onAdd: (mission: Omit<Mission, 'id' | 'createdAt'>) => void;
     isDark: boolean;
+    initialData?: Mission;
+    isEditMode?: boolean;
 }) => {
     const [formData, setFormData] = useState({
-        title: '',
-        description: '',
-        priority: 'medium' as Mission['priority'],
-        status: 'pending' as Mission['status'],
-        dueDate: '',
-        category: '',
-        tags: '',
-        recursion: '',
+        title: initialData?.title || '',
+        description: initialData?.description || '',
+        priority: (initialData?.priority || 'medium') as Mission['priority'],
+        status: (initialData?.status || 'pending') as Mission['status'],
+        dueDate: initialData?.dueDate ? new Date(initialData.dueDate).toISOString().split('T')[0] : '',
+        category: initialData?.category || '',
+        tags: initialData?.tags ? initialData.tags.join(', ') : '',
+        recursion: initialData?.recursion || '',
     });
+
+    // Update form when initialData changes
+    React.useEffect(() => {
+        if (initialData) {
+            setFormData({
+                title: initialData.title || '',
+                description: initialData.description || '',
+                priority: initialData.priority || 'medium',
+                status: initialData.status || 'pending',
+                dueDate: initialData.dueDate ? new Date(initialData.dueDate).toISOString().split('T')[0] : '',
+                category: initialData.category || '',
+                tags: initialData.tags ? initialData.tags.join(', ') : '',
+                recursion: initialData.recursion || '',
+            });
+        }
+    }, [initialData]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -437,7 +486,9 @@ const AddMissionModal = ({
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className={`text-2xl font-bold ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>Initialize New Mission</h2>
+                    <h2 className={`text-2xl font-bold ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>
+                        {isEditMode ? 'Edit Mission' : 'Initialize New Mission'}
+                    </h2>
                     <button onClick={onClose} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-800'}>
                         <X className="w-6 h-6" />
                     </button>
@@ -558,7 +609,7 @@ const AddMissionModal = ({
                         className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold py-3 rounded-lg
                                  hover:from-cyan-400 hover:to-blue-500 transition-all duration-300 transform hover:scale-[1.02]"
                     >
-                        Initialize Mission
+                        {isEditMode ? 'Save Changes' : 'Initialize Mission'}
                     </button>
                 </form>
             </motion.div>
@@ -580,6 +631,8 @@ export default function Dashboard() {
     const [selectedStatus, setSelectedStatus] = useState<string>('all');
     const [showFilters, setShowFilters] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingMission, setEditingMission] = useState<Mission | null>(null);
     const [isMobile, setIsMobile] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [isDark, setIsDark] = useState(() => {
@@ -767,21 +820,52 @@ export default function Dashboard() {
         }
     }, [router, session]);
 
-    // Delete mission
+    // Delete mission (move to trash)
     const handleDeleteMission = useCallback(async (id: string) => {
         try {
-            await api.tasks.delete(id);
+            const userId = session?.user?.id || session?.user?.email;
+            await api.tasks.delete(id, userId);
             setMissions(prev => prev.filter(m => m.id !== id));
         } catch (error) {
             console.error('Failed to delete task:', error);
             alert('Failed to delete task. Please try again.');
         }
-    }, []);
+    }, [session]);
 
     // Edit mission
     const handleEditMission = useCallback((mission: Mission) => {
-        console.log('Edit mission:', mission);
+        setEditingMission(mission);
+        setShowEditModal(true);
     }, []);
+
+    // Save edited mission
+    const handleSaveEdit = useCallback(async (updatedMission: Omit<Mission, 'id' | 'createdAt'>) => {
+        if (!editingMission) return;
+
+        try {
+            await api.tasks.update(editingMission.id, {
+                title: updatedMission.title,
+                description: updatedMission.description,
+                status: updatedMission.status,
+                priority: updatedMission.priority,
+                dueDate: updatedMission.dueDate,
+                recursion: updatedMission.recursion,
+                category: updatedMission.category,
+                tags: updatedMission.tags,
+            });
+
+            setMissions(prev => prev.map(m =>
+                m.id === editingMission.id
+                    ? { ...m, ...updatedMission }
+                    : m
+            ));
+            setShowEditModal(false);
+            setEditingMission(null);
+        } catch (error) {
+            console.error('Failed to update task:', error);
+            alert('Failed to update task. Please try again.');
+        }
+    }, [editingMission]);
 
     // Toggle mission completion
     const handleToggleComplete = useCallback(async (id: string) => {
@@ -789,12 +873,12 @@ export default function Dashboard() {
             const mission = missions.find(m => m.id === id);
             if (!mission) return;
 
-            const completed = mission.status !== 'completed';
-            await api.tasks.update(id, { completed });
+            const newStatus = mission.status === 'completed' ? 'pending' : 'completed';
+            await api.tasks.update(id, { status: newStatus });
 
             setMissions(prev => prev.map(m =>
                 m.id === id
-                    ? { ...m, status: completed ? 'completed' : 'pending' }
+                    ? { ...m, status: newStatus }
                     : m
             ));
         } catch (error) {
@@ -1362,6 +1446,19 @@ export default function Dashboard() {
                         onClose={() => setShowAddModal(false)}
                         onAdd={handleAddMission}
                         isDark={isDark}
+                    />
+                )}
+                {showEditModal && editingMission && (
+                    <AddMissionModal
+                        isOpen={showEditModal}
+                        onClose={() => {
+                            setShowEditModal(false);
+                            setEditingMission(null);
+                        }}
+                        onAdd={handleSaveEdit}
+                        isDark={isDark}
+                        initialData={editingMission}
+                        isEditMode={true}
                     />
                 )}
             </AnimatePresence>

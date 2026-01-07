@@ -254,10 +254,42 @@ export const api = {
     },
 
     /**
-     * Delete a task
+     * Delete a task (moves to trash)
      */
-    delete: async (id: string) => {
-      return fetchApi<{ message: string; id: string }>(`/tasks/${id}`, {
+    delete: async (id: string, userId?: string) => {
+      const params = userId ? `?user_id=${userId}` : ''
+      return fetchApi<{ message: string; id: string }>(`/tasks/${id}${params}`, {
+        method: 'DELETE',
+      })
+    },
+  },
+
+  /**
+   * Trash/Bin endpoints
+   */
+  trash: {
+    /**
+     * Get all items in trash
+     */
+    list: async (userId?: string) => {
+      const params = userId ? `?user_id=${userId}` : ''
+      return fetchApi<Task[]>(`/trash/${params}`)
+    },
+
+    /**
+     * Restore a task from trash
+     */
+    restore: async (trashId: string) => {
+      return fetchApi<{ message: string; id: string }>(`/trash/${trashId}/restore`, {
+        method: 'POST',
+      })
+    },
+
+    /**
+     * Permanently delete from trash
+     */
+    permanentDelete: async (trashId: string) => {
+      return fetchApi<{ message: string; id: string }>(`/trash/${trashId}/permanent`, {
         method: 'DELETE',
       })
     },
