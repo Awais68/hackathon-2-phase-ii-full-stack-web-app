@@ -29,6 +29,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if e
 Base = declarative_base()
 
 # Database Models
+class UserDB(Base):
+    __tablename__ = "users"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    email_verified = Column(Boolean, default=False)
+    image = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class TaskDB(Base):
     __tablename__ = "tasks"
     
@@ -176,6 +188,24 @@ async def root():
 # ============================================
 # Example Todo Models (placeholder for future implementation)
 # ============================================
+class UserCreate(BaseModel):
+    id: str
+    name: str
+    email: str
+    email_verified: bool = False
+    image: str | None = None
+
+
+class UserResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    email_verified: bool
+    image: str | None
+    created_at: str
+    updated_at: str
+
+
 class TodoCreate(BaseModel):
     title: str
     description: str | None = None
@@ -211,6 +241,79 @@ class TodoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============================================
+# User Endpoints
+# ============================================
+
+@app.post("/users/sync", tags=["Users"], status_code=status.HTTP_200_OK)
+async def sync_user(user_data: UserCreate, db: Session = Depends(get_db)):
+    """Sync user from frontend to backend database."""
+    # Check if user already exists
+    existing_user = db.query(UserDB).filter(UserDB.id == user_data.id).first()
+    
+    if existing_user:
+        # Update existing user
+        existing_user.name = user_data.name
+        existing_user.email = user_data.email
+        existing_user.email_verified = user_data.email_verified
+        existing_user.image = user_data.image
+        existing_user.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing_user)
+        
+        return {
+            "id": existing_user.id,
+            "name": existing_user.name,
+            "email": existing_user.email,
+            "email_verified": existing_user.email_verified,
+            "image": existing_user.image,
+            "created_at": existing_user.created_at.isoformat(),
+            "updated_at": existing_user.updated_at.isoformat()
+        }
+    else:
+        # Create new user
+        new_user = UserDB(
+            id=user_data.id,
+            name=user_data.name,
+            email=user_data.email,
+            email_verified=user_data.email_verified,
+            image=user_data.image,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        return {
+            "id": new_user.id,
+            "name": new_user.name,
+            "email": new_user.email,
+            "email_verified": new_user.email_verified,
+            "image": new_user.image,
+            "created_at": new_user.created_at.isoformat(),
+            "updated_at": new_user.updated_at.isoformat()
+        }
+
+
+@app.get("/users/{user_id}", tags=["Users"])
+async def get_user(user_id: str, db: Session = Depends(get_db)):
+    """Get user details by ID."""
+    user = db.query(UserDB).filter(UserDB.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "email_verified": user.email_verified,
+        "image": user.image,
+        "created_at": user.created_at.isoformat(),
+        "updated_at": user.updated_at.isoformat()
+    }
 
 
 # ============================================

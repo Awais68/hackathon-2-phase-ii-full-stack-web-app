@@ -157,6 +157,40 @@ export const api = {
   },
 
   /**
+   * User endpoints
+   */
+  users: {
+    /**
+     * Sync user from frontend to backend
+     */
+    sync: async (userData: {
+      id: string;
+      name: string;
+      email: string;
+      emailVerified: boolean;
+      image?: string | null;
+    }) => {
+      return fetchApi('/users/sync', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: userData.id,
+          name: userData.name,
+          email: userData.email,
+          email_verified: userData.emailVerified,
+          image: userData.image || null
+        }),
+      })
+    },
+
+    /**
+     * Get user by ID
+     */
+    get: async (userId: string) => {
+      return fetchApi(`/users/${userId}`)
+    },
+  },
+
+  /**
    * Task CRUD endpoints
    */
   tasks: {

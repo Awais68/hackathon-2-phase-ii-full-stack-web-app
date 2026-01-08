@@ -664,10 +664,31 @@ export default function Dashboard() {
                     return;
                 }
 
-                console.log('Fetching tasks for user:', session?.user?.email);
+                // Sync user to backend
+                if (session?.user) {
+                    try {
+                        await api.users.sync({
+                            id: session.user.id,
+                            name: session.user.name || 'User',
+                            email: session.user.email,
+                            emailVerified: session.user.emailVerified || false,
+                            image: session.user.image
+                        });
+                        console.log('User synced to backend');
+                    } catch (error) {
+                        console.error('Failed to sync user:', error);
+                    }
+                }
+
                 const userId = session?.user?.id || session?.user?.email;
+                
+                if (!userId) {
+                    console.error('No userId found in session');
+                    setLoading(false);
+                    return;
+                }
+                
                 const tasks = await api.tasks.list({ userId });
-                console.log('Tasks fetched successfully:', tasks.length);
 
                 // Map backend tasks to Mission format
                 const mappedTasks: Mission[] = tasks.map((task: any) => ({
@@ -767,8 +788,6 @@ export default function Dashboard() {
     // Add new mission
     const handleAddMission = useCallback(async (missionData: Omit<Mission, 'id' | 'createdAt'>) => {
         try {
-            console.log('Creating task with data:', missionData);
-
             // Get user ID from session
             const userId = session?.user?.id || session?.user?.email || 'anonymous';
 
@@ -784,8 +803,6 @@ export default function Dashboard() {
                 tags: missionData.tags,
                 userId: userId
             });
-
-            console.log('Task created successfully:', task);
 
             // Add to local state
             const newMission: Mission = {
