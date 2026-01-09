@@ -4,8 +4,9 @@ import { useAuthStore } from '@/stores/useAuthStore'
 /**
  * Base API URL - configure based on environment
  */
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+// const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 /**
  * Base fetch function with error handling
  * @param endpoint - API endpoint path
@@ -22,6 +23,7 @@ async function fetchApi<T>(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   }
 
   if (options.headers) {
@@ -39,6 +41,8 @@ async function fetchApi<T>(
     const response = await fetch(url, {
       ...options,
       headers,
+      mode: 'cors', // Explicitly enable CORS
+      credentials: 'omit', // Don't send cookies for cross-origin (Render doesn't need them)
     })
 
     if (!response.ok) {

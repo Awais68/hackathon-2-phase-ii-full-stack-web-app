@@ -132,10 +132,9 @@ CORS_ORIGINS = [
     "http://localhost:3005",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3005",
-    # Vercel deployments
+    # Vercel deployments - Main domain
     "https://hackathon-2-phase-ii-full-stack-web-app.vercel.app",
     "https://todo-evolution.vercel.app",
-    # Add any other Vercel preview URLs
 ]
 
 # Add custom origins from environment
@@ -143,13 +142,31 @@ extra_origins = os.getenv("CORS_ORIGINS", "")
 if extra_origins:
     CORS_ORIGINS.extend(extra_origins.split(","))
 
+# Add wildcard for Vercel preview deployments
+CORS_ORIGINS.append("https://*.vercel.app")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for now (can restrict in production)
+    allow_origins=["*"],  # Allow all origins for maximum compatibility
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+    ],
+    expose_headers=[
+        "Content-Length",
+        "Content-Type",
+        "Access-Control-Allow-Origin",
+        "Access-Control-Allow-Credentials",
+    ],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 
