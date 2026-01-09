@@ -28,9 +28,18 @@ const getBaseURL = () => {
     return process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3005"
 }
 
+// Determine database provider based on DATABASE_URL
+const getDatabaseProvider = () => {
+    const dbUrl = process.env.DATABASE_URL || ""
+    if (dbUrl.includes("postgresql") || dbUrl.includes("postgres")) {
+        return "postgresql"
+    }
+    return "sqlite"
+}
+
 export const auth = betterAuth({
     database: prisma ? prismaAdapter(prisma, {
-        provider: "sqlite",
+        provider: getDatabaseProvider(),
     }) : undefined as any,
     emailAndPassword: {
         enabled: true,
@@ -46,6 +55,8 @@ export const auth = betterAuth({
         "http://localhost:3000",
         "http://localhost:3005",
         "http://localhost:3003",
+        "https://hackathon-2-phase-ii-full-stack-web-app.vercel.app",
+        "https://*.vercel.app",
         process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "",
         process.env.NEXT_PUBLIC_APP_URL || "",
     ].filter(Boolean),
