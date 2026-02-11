@@ -44,7 +44,7 @@ class UserDB(Base):
 class TaskDB(Base):
     __tablename__ = "tasks"
     
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = Column(String, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(String)
     status = Column(String, default="pending")
@@ -52,7 +52,7 @@ class TaskDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     due_date = Column(DateTime, nullable=True)
-    user_id = Column(Integer, index=True)
+    user_id = Column(String, index=True)
     recursion = Column(String, nullable=True)  # daily, weekly, monthly
     category = Column(String, default="General")
     tags = Column(String, nullable=True)  # comma-separated tags
@@ -426,7 +426,7 @@ async def create_task(todo: TodoCreate, db: Session = Depends(get_db)):
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
         due_date=due_date,
-        user_id=int(todo.user_id) if todo.user_id else 1,
+        user_id=todo.user_id if todo.user_id else "default",
         recursion=todo.recursion,
         category=todo.category,
         tags=",".join(todo.tags) if todo.tags else None
