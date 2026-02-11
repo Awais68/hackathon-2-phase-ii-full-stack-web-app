@@ -122,7 +122,10 @@ app = FastAPI(
 )
 
 # CORS Configuration
-# Allow all localhost ports for development and specific origins for production
+# NOTE: allow_origins=["*"] with allow_credentials=True is INVALID per CORS spec.
+# When credentials are needed, the server must respond with the exact requesting origin.
+# Using allow_origins=["*"] WITHOUT credentials works for simple requests.
+# For this app, we allow all origins without credentials (frontend doesn't send cookies cross-origin).
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
@@ -132,39 +135,29 @@ CORS_ORIGINS = [
     "http://localhost:3005",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3005",
-    # Vercel deployments - Main domain
+    # Vercel deployments
     "https://hackathon-2-phase-ii-full-stack-web-app.vercel.app",
     "https://todo-evolution.vercel.app",
+    "https://todo-app-nine-virid-92.vercel.app",
 ]
 
 # Add custom origins from environment
 extra_origins = os.getenv("CORS_ORIGINS", "")
 if extra_origins:
-    CORS_ORIGINS.extend(extra_origins.split(","))
-
-# Add wildcard for Vercel preview deployments
-CORS_ORIGINS.append("https://*.vercel.app")
+    for origin in extra_origins.split(","):
+        origin = origin.strip()
+        if origin:
+            CORS_ORIGINS.append(origin)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for maximum compatibility
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins (credentials=False so wildcard is valid)
+    allow_credentials=False,  # Must be False when allow_origins=["*"]
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-    allow_headers=[
-        "Accept",
-        "Accept-Language",
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers",
-    ],
+    allow_headers=["*"],  # Allow all headers including Authorization
     expose_headers=[
         "Content-Length",
         "Content-Type",
-        "Access-Control-Allow-Origin",
-        "Access-Control-Allow-Credentials",
     ],
     max_age=3600,  # Cache preflight requests for 1 hour
 )
