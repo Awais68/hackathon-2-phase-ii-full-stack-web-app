@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Terminal, ArrowRight, User, Lock, Eye, EyeOff, Mail, AlertCircle, CheckCircle2 } from 'lucide-react'
-import { signIn, signUp } from '@/lib/auth-client'
+import { signIn, signUp, useSession } from '@/lib/auth-client'
 
 type AuthMode = 'signin' | 'signup'
 
 export function AuthPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { data: session, isPending } = useSession()
   const [mode, setMode] = useState<AuthMode>('signin')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -21,6 +22,13 @@ export function AuthPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (!isPending && session?.user) {
+      window.location.href = '/dashboard'
+    }
+  }, [session, isPending])
 
   // Check for mode in URL
   useEffect(() => {
@@ -82,7 +90,9 @@ export function AuthPage() {
           return
         }
 
-        router.push('/dashboard')
+        // Wait for session to be established then redirect
+        await new Promise(resolve => setTimeout(resolve, 500))
+        window.location.href = '/dashboard'
       } else {
         if (!email.trim()) {
           setError('Email is required')
@@ -107,7 +117,9 @@ export function AuthPage() {
           return
         }
 
-        router.push('/dashboard')
+        // Wait for session to be established then redirect
+        await new Promise(resolve => setTimeout(resolve, 500))
+        window.location.href = '/dashboard'
       }
     } catch (err: unknown) {
       const error = err as { message?: string }

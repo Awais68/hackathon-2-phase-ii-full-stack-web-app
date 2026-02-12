@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS trash CASCADE;
 DROP TABLE IF EXISTS tasks CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
--- Create users table with VARCHAR id (already compatible with UUIDs)
+-- Create users table with VARCHAR id (compatible with Better Auth string IDs)
 CREATE TABLE users (
     id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE tasks (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     due_date TIMESTAMP,
-    user_id VARCHAR(255) INDEX,
+    user_id VARCHAR(255),
     recursion VARCHAR(50),
     category VARCHAR(100) DEFAULT 'General',
     tags TEXT,
@@ -38,14 +38,14 @@ CREATE TABLE tasks (
 -- Create trash table for soft-deleted tasks
 CREATE TABLE trash (
     id VARCHAR(255) PRIMARY KEY,
-    task_id VARCHAR(255) INDEX,
+    task_id VARCHAR(255),
     title VARCHAR(255) NOT NULL,
     description TEXT,
     status VARCHAR(50),
     priority VARCHAR(50),
     created_at TIMESTAMP,
     deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    user_id VARCHAR(255) INDEX,
+    user_id VARCHAR(255),
     recursion VARCHAR(50),
     category VARCHAR(100),
     tags TEXT,
@@ -55,5 +55,6 @@ CREATE TABLE trash (
 -- Create indexes for better query performance
 CREATE INDEX idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX idx_trash_user_id ON trash(user_id);
+CREATE INDEX idx_trash_task_id ON trash(task_id);
 CREATE INDEX idx_tasks_status ON tasks(status);
-CREATE INDEX INDEX_tasks_priority ON tasks(priority);
+CREATE INDEX idx_tasks_priority ON tasks(priority);

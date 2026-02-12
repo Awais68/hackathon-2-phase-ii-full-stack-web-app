@@ -657,10 +657,10 @@ export default function Dashboard() {
 
                 setLoading(true);
 
-                // Check authentication
+                // Check authentication - redirect to auth if not logged in
                 if (!isAuthenticated) {
-                    console.log('Not authenticated - showing empty dashboard');
-                    setLoading(false);
+                    console.log('Not authenticated - redirecting to auth');
+                    window.location.href = '/auth';
                     return;
                 }
 

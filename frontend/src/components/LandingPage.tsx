@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
@@ -78,11 +78,7 @@ const steps = [
 ]
 
 export function LandingPage() {
-  const [isLoaded, setIsLoaded] = useState(false)
-
-  useEffect(() => {
-    setIsLoaded(true)
-  }, [])
+  const [isLoaded, setIsLoaded] = useState(true)
 
   return (
     <div className="min-h-screen bg-background relative">

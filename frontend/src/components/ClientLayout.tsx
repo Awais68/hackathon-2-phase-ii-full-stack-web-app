@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { PWAProviders } from "@/components/PWAProviders"
 import "@/lib/i18n-config"
 import { useLanguage } from '@/hooks/useLanguage'
@@ -11,17 +11,30 @@ import { useLanguage } from '@/hooks/useLanguage'
  */
 function LanguageLayout({ children }: { children: React.ReactNode }) {
     const { isRTL, dir } = useLanguage()
+    const [mounted, setMounted] = useState(false)
 
-    // Apply RTL direction to document
+    // Handle hydration mismatch by waiting for client mount
     useEffect(() => {
-        document.documentElement.dir = dir
-        document.documentElement.lang = isRTL ? 'ur' : 'en'
-    }, [dir, isRTL])
+        setMounted(true)
+    }, [])
+
+    // Apply RTL direction to document after mount
+    useEffect(() => {
+        if (mounted) {
+            document.documentElement.dir = dir
+            document.documentElement.lang = isRTL ? 'ur' : 'en'
+        }
+    }, [dir, isRTL, mounted])
+
+    // Use default 'ltr' on server, actual value after hydration
+    const currentDir = mounted ? dir : 'ltr'
+    const currentLang = mounted ? (isRTL ? 'ur' : 'en') : 'en'
 
     return (
         <div
-            dir={dir}
-            lang={isRTL ? 'ur' : 'en'}
+            dir={currentDir}
+            lang={currentLang}
+            suppressHydrationWarning
         >
             {children}
         </div>
